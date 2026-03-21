@@ -1,0 +1,18 @@
+services:
+  schwab-gateway:
+    build: .
+    ports:
+      - "8182:8182"
+    restart: always
+    env_file: .env
+    volumes:
+      - schwab_token:/root/.schwab
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8182/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  schwab_token:

@@ -1,0 +1,44 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.env
+*.egg-info/
+dist/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+_temp_extension
+junit.xml
+[uU]ntitled*
+notebook/static/*
+!notebook/static/favicons
+notebook/labextension
+notebook/schemas
+docs/source/changelog.md
+docs/source/contributing.md
+
+# playwright
+ui-tests/test-results
+ui-tests/playwright-report
+
+# RTC
+.jupyter_ystore.db
+
+# yarn >=2.x local files
+.yarn/*
+.pnp.*
+ui-tests/.yarn/*
+ui-tests/.pnp.*
+
+.env
+.cursor/
+
+*.pkl
