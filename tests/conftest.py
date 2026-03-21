@@ -89,20 +89,26 @@ def make_token_file(tmp_path: Path, age_seconds: float = 3600) -> Path:
 class MockStreamClient:
     """Minimal StreamClient stand-in for tests.
 
-    Pass ``canned_messages`` as a list of ``(service_key, message_dict)`` pairs.
-    Each call to ``handle_message()`` dispatches one canned message to the
-    registered handler for that service, then raises ``WebSocketDisconnect``
-    when the list is exhausted.
+    ``canned_messages`` is a list of either:
+    - ``(service_key, message_dict)`` tuples — dispatched to registered handlers, or
+    - ``Exception`` instances — raised directly from ``handle_message()``.
+
+    ``WebSocketDisconnect`` is raised when the list is exhausted.
+
+    Pass ``login_raises`` to simulate a failed login (used to test reconnect
+    exhaustion without needing ``handle_message`` to fail repeatedly).
     """
 
-    def __init__(self, http_client=None, *, canned_messages=None):
+    def __init__(self, http_client=None, *, canned_messages=None, login_raises=None):
         self._handlers: dict[str, list] = {}
         self._call_count = 0
-        self._canned: list[tuple[str, dict]] = canned_messages or []
+        self._canned: list = canned_messages or []
         self.logout_called = False
+        self._login_raises = login_raises
 
     async def login(self) -> None:
-        pass
+        if self._login_raises is not None:
+            raise self._login_raises
 
     async def logout(self) -> None:
         self.logout_called = True
@@ -144,8 +150,11 @@ class MockStreamClient:
         from fastapi import WebSocketDisconnect
         if self._call_count >= len(self._canned):
             raise WebSocketDisconnect()
-        service_key, msg = self._canned[self._call_count]
+        item = self._canned[self._call_count]
         self._call_count += 1
+        if isinstance(item, BaseException):
+            raise item
+        service_key, msg = item
         for handler in self._handlers.get(service_key, []):
             result = handler(msg)
             if inspect.isawaitable(result):

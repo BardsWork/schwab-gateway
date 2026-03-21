@@ -11,6 +11,9 @@ from gateway import client_state
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Streaming"])
 
+MAX_RECONNECT_ATTEMPTS = 3
+RECONNECT_BASE_DELAY = 2.0  # seconds; doubled on each successive attempt
+
 # Maps user-facing subscription type → (subs_method, handler_method, service_key)
 _SUBSCRIPTION_MAP: dict[str, tuple[str, str, str]] = {
     "level_one_equity":           ("level_one_equity_subs",           "add_level_one_equity_handler",           "LEVELONE_EQUITIES"),
@@ -29,14 +32,37 @@ _SUBSCRIPTION_MAP: dict[str, tuple[str, str, str]] = {
 }
 
 
+class _FEDisconnected(Exception):
+    """Raised by _make_forwarder when the frontend WebSocket is no longer writable."""
+
+
 def _make_forwarder(ws: WebSocket, service: str):
     """Return an async handler that forwards labeled messages to the WebSocket."""
     async def _forward(msg: dict) -> None:
         try:
             await ws.send_json({"service": service, "content": msg})
-        except Exception:
-            pass  # WebSocket already closing
+        except Exception as exc:
+            logger.warning("Stream WS: failed to forward %s message to client: %s", service, exc)
+            raise _FEDisconnected() from exc
     return _forward
+
+
+async def _build_stream_client(
+    http_client: Any, specs: list[dict], ws: WebSocket
+) -> schwab.streaming.StreamClient:
+    """Instantiate, log in, and subscribe a StreamClient for the given specs."""
+    sc = schwab.streaming.StreamClient(http_client)
+    await sc.login()
+    for spec in specs:
+        sub_type = spec["type"]
+        subs_method_name, handler_method_name, service_key = _SUBSCRIPTION_MAP[sub_type]
+        getattr(sc, handler_method_name)(_make_forwarder(ws, service_key))
+        subs_method = getattr(sc, subs_method_name)
+        if sub_type == "account_activity":
+            await subs_method()
+        else:
+            await subs_method(spec["symbols"])
+    return sc
 
 
 def _parse_subscriptions(raw: Any) -> list[dict]:
@@ -113,43 +139,85 @@ async def stream(ws: WebSocket) -> None:
         return
 
     # Build StreamClient, log in, subscribe
-    stream_client = schwab.streaming.StreamClient(http_client)
+    stream_client = None
     try:
-        await stream_client.login()
-
-        for spec in specs:
-            sub_type = spec["type"]
-            subs_method_name, handler_method_name, service_key = _SUBSCRIPTION_MAP[sub_type]
-
-            # Register forwarding handler before subscribing
-            getattr(stream_client, handler_method_name)(
-                _make_forwarder(ws, service_key)
-            )
-
-            # Subscribe (account_activity takes no symbols)
-            subs_method = getattr(stream_client, subs_method_name)
-            if sub_type == "account_activity":
-                await subs_method()
-            else:
-                await subs_method(spec["symbols"])
-
+        stream_client = await _build_stream_client(http_client, specs, ws)
         await ws.send_json({"status": "subscribed", "count": len(specs)})
         logger.info("Stream WS: subscribed to %d feed(s).", len(specs))
 
-        # Message pump — runs until the client disconnects or an error occurs
+        # Message pump with reconnect on Schwab-side errors.
+        # _FEDisconnected / WebSocketDisconnect mean the browser is gone → exit.
+        # Any other exception means the Schwab stream broke → attempt reconnect.
         while True:
-            await stream_client.handle_message()
+            try:
+                await stream_client.handle_message()
+            except (_FEDisconnected, WebSocketDisconnect):
+                logger.info("Stream WS: client disconnected.")
+                return
+            except Exception as exc:
+                logger.warning("Stream WS: Schwab stream interrupted: %s", exc)
+                try:
+                    await stream_client.logout()
+                except Exception:
+                    pass
+                stream_client = None
 
-    except WebSocketDisconnect:
-        logger.info("Stream WS: client disconnected.")
+                for attempt in range(1, MAX_RECONNECT_ATTEMPTS + 1):
+                    delay = RECONNECT_BASE_DELAY * (2 ** (attempt - 1))
+                    logger.info(
+                        "Stream WS: reconnecting in %.1fs (attempt %d/%d)...",
+                        delay, attempt, MAX_RECONNECT_ATTEMPTS,
+                    )
+                    try:
+                        await ws.send_json({
+                            "status": "reconnecting",
+                            "attempt": attempt,
+                            "max_attempts": MAX_RECONNECT_ATTEMPTS,
+                            "delay_seconds": delay,
+                        })
+                    except Exception:
+                        return  # FE is gone; no point reconnecting
+
+                    await asyncio.sleep(delay)
+
+                    try:
+                        stream_client = await _build_stream_client(http_client, specs, ws)
+                        await ws.send_json({"status": "reconnected", "attempt": attempt})
+                        logger.info("Stream WS: reconnected on attempt %d.", attempt)
+                        break  # back to message pump
+                    except (_FEDisconnected, WebSocketDisconnect):
+                        return
+                    except Exception as reconnect_exc:
+                        logger.error(
+                            "Stream WS: reconnect attempt %d/%d failed: %s",
+                            attempt, MAX_RECONNECT_ATTEMPTS, reconnect_exc,
+                        )
+                else:
+                    logger.error(
+                        "Stream WS: exhausted %d reconnect attempts, closing.",
+                        MAX_RECONNECT_ATTEMPTS,
+                    )
+                    try:
+                        await ws.send_json({
+                            "error": "reconnect_failed",
+                            "detail": (
+                                f"Schwab stream failed after "
+                                f"{MAX_RECONNECT_ATTEMPTS} reconnect attempts."
+                            ),
+                        })
+                    except Exception:
+                        pass
+                    return
+
     except Exception as exc:
-        logger.exception("Stream WS error: %s", exc)
+        logger.exception("Stream WS error during setup: %s", exc)
         try:
             await ws.send_json({"error": "stream_error", "detail": str(exc)})
         except Exception:
             pass
     finally:
-        try:
-            await stream_client.logout()
-        except Exception:
-            pass
+        if stream_client is not None:
+            try:
+                await stream_client.logout()
+            except Exception:
+                pass
