@@ -14,7 +14,7 @@ from gateway.token_utils import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["Service"])
 
 
 @router.get("/health")

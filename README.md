@@ -22,10 +22,16 @@ schwab-gateway :8182   ←──── single token.json
 | `GET` | `/bars/{symbol}` | Intraday OHLCV (last ~10 days) |
 | `GET` | `/daily/{symbol}` | Daily OHLCV (back to ~1985) |
 | `GET` | `/weekly/{symbol}` | Weekly OHLCV |
+| `GET` | `/instruments` | Symbol search and fundamental data |
+| `GET` | `/quotes` | Live quotes with bid/ask/last, fundamentals, sector, industry |
+| `WS` | `/stream` | Real-time streaming (level 1, charts, books, etc.) |
+| `GET` | `/llm-docs` | Machine-readable API reference (for AI agents) |
+| `GET` | `/docs` | Swagger UI (interactive API explorer) |
+| `GET` | `/openapi.json` | OpenAPI schema |
 | `GET` | `/reauth` | Generate Schwab authorization URL |
 | `POST` | `/reauth/complete` | Exchange code, write token, reinit client |
 
-All responses use the envelope `{"symbol": "SPY", "count": N, "data": [...]}`.
+Data endpoints use the envelope `{"symbol": "SPY", "count": N, "data": [...]}`. The instruments endpoint uses `{"projection": "...", "count": N, "data": {...}}`.
 
 ---
 
@@ -103,7 +109,7 @@ curl http://localhost:8182/health
 # "age_hours" should be ~0
 ```
 
-The Postman collection (`schwab-gateway.postman_collection.json`) has a test script on the `/reauth` request that automatically saves the URL to the `auth_url` variable.
+The Swagger UI at `/docs` lists all endpoints and lets you execute requests directly in the browser.
 
 ---
 
@@ -166,6 +172,80 @@ curl "http://localhost:8182/daily/SPY?from_date=2025-01-01&to_date=2026-03-21"
 ### `GET /weekly/{symbol}`
 
 Same parameters as `/daily`. Each bar represents one calendar week.
+
+---
+
+### `GET /instruments`
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `symbols` | string | required | Comma-separated tickers or a search term, e.g. `SPY,AAPL` |
+| `projection` | string | `fundamental` | `fundamental` \| `symbol-search` \| `symbol-regex` \| `desc-search` \| `desc-regex` \| `search` |
+
+Returns fundamental metrics for `fundamental` projection, or matching instrument records for search projections. For `fundamental`, response is `{"data": {"instruments": [{"cusip": ..., "symbol": ..., "description": "APPLE INC", "exchange": ..., "assetType": ..., "fundamental": {...}}]}}`. Note: `sector` and `industry` are not returned.
+
+```bash
+curl "http://localhost:8182/instruments?symbols=SPY&projection=fundamental"
+curl "http://localhost:8182/instruments?symbols=SP&projection=symbol-search"
+```
+
+Response: `{"projection": "fundamental", "count": 1, "data": {"SPY": {...}}}`
+
+---
+
+### `GET /quotes`
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `symbols` | string | required | Comma-separated tickers, e.g. `SPY,AAPL` |
+| `fields` | string | `quote,fundamental,reference` | Comma-separated groups: `quote`, `fundamental`, `extended`, `reference`, `regular` |
+
+The `fundamental` group includes P/E ratio, EPS, dividend amount/yield/dates, shares outstanding, and average volumes. The `reference` group includes `description` (company name), `exchange`, `exchangeName`, `cusip`, `isShortable`, `htbRate`. The `quote` group includes bid, ask, last, volume, OHLC, 52-week high/low, mark, net change, and post-market data. Note: `sector` and `industry` are **not** returned by this endpoint.
+
+```bash
+curl "http://localhost:8182/quotes?symbols=SPY,AAPL"
+curl "http://localhost:8182/quotes?symbols=SPY&fields=fundamental,reference"
+```
+
+Response: `{"count": 1, "data": {"SPY": {"quote": {...}, "fundamental": {...}, "reference": {...}}}}`
+
+---
+
+### `WS /stream`
+
+Real-time market data via the Schwab StreamClient.
+
+**Protocol:**
+1. Connect to `ws://localhost:8182/stream`
+2. Send a JSON subscription spec (within 10 s)
+3. Receive `{"status": "subscribed", "count": N}` on success
+4. Receive stream messages as `{"service": "<SERVICE>", "content": {...}}`
+5. Close when done — the gateway tears down the upstream WebSocket
+
+**Subscription spec:**
+```json
+{
+  "subscriptions": [
+    {"type": "level_one_equity", "symbols": ["SPY", "QQQ"]},
+    {"type": "chart_equity",     "symbols": ["SPY"]},
+    {"type": "account_activity"}
+  ]
+}
+```
+
+**Subscription types:** `level_one_equity`, `chart_equity`, `level_one_option`, `level_one_futures`, `chart_futures`, `level_one_forex`, `level_one_futures_options`, `nyse_book`, `nasdaq_book`, `options_book`, `screener_equity`, `screener_option`, `account_activity`
+
+`account_activity` requires no `symbols` field. All other types require a non-empty `symbols` list.
+
+---
+
+### `GET /llm-docs`
+
+Returns the full API reference as `text/plain` (Markdown). Designed for AI agent consumption — an agent in another repo can call this endpoint to understand every endpoint, parameter, response shape, and the streaming protocol without exploring the source.
+
+```bash
+curl "http://localhost:8182/llm-docs"
+```
 
 ---
 
@@ -248,6 +328,11 @@ gateway/
     health.py          # GET /health
     bars.py            # GET /bars, /daily, /weekly
     auth.py            # GET /reauth, POST /reauth/complete
+    instruments.py     # GET /instruments
+    quotes.py          # GET /quotes
+    stream.py          # WS /stream
+    llm_docs.py        # GET /llm-docs
+  llm_docs.md          # machine-readable API reference (served by llm_docs.py)
   monitoring/
     token_monitor.py   # asyncio background task
 tests/
@@ -258,5 +343,4 @@ tests/
 .docker/Dockerfile     # python:3.11-slim + uv
 docker-compose.yml     # port 8182, named volume
 deploy/README.md       # operational notes
-schwab-gateway.postman_collection.json
 ```
