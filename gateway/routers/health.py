@@ -8,8 +8,8 @@ from gateway import client_state
 from gateway.settings import get_settings
 from gateway.token_utils import (
     load_token,
+    refresh_token_expires_at,
     refresh_token_expires_in,
-    token_access_expires_at,
     token_age_seconds,
 )
 
@@ -29,11 +29,11 @@ def health() -> dict[str, Any]:
             token = load_token(settings.token_path)
             age_h = token_age_seconds(token) / 3600
             refresh_left_h = refresh_token_expires_in(token) / 3600
-            access_expires = token_access_expires_at(token).isoformat()
+            refresh_expires = refresh_token_expires_at(token).isoformat()
             token_info = {
                 "age_hours": round(age_h, 2),
                 "refresh_expires_in_hours": round(refresh_left_h, 2),
-                "access_expires_at": access_expires,
+                "access_expires_at": refresh_expires,
             }
         except Exception as exc:
             token_info = {"error": str(exc)}

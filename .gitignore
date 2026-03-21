@@ -39,6 +39,7 @@ ui-tests/.yarn/*
 ui-tests/.pnp.*
 
 .env
+token.json
 .cursor/
 
 *.pkl

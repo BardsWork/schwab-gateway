@@ -42,6 +42,11 @@ def token_access_expires_at(token: dict) -> datetime:
     return datetime.fromtimestamp(token["token"]["expires_at"])
 
 
+def refresh_token_expires_at(token: dict) -> datetime:
+    """Datetime when the 7-day refresh token expires."""
+    return datetime.fromtimestamp(token["creation_timestamp"] + REFRESH_TOKEN_TTL_SECONDS)
+
+
 def write_token(token_path: Path, oauth_response: dict) -> None:
     """Persist a fresh OAuth token response to *token_path*.
 
