@@ -255,7 +255,7 @@ tests/
   test_bars.py
   test_health.py
   test_token_utils.py
-Dockerfile             # python:3.11-slim + uv
+.docker/Dockerfile     # python:3.11-slim + uv
 docker-compose.yml     # port 8182, named volume
 deploy/README.md       # operational notes
 schwab-gateway.postman_collection.json
