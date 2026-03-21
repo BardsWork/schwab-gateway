@@ -24,7 +24,7 @@ from gateway.settings import get_settings
 from gateway.token_utils import write_token
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["Auth"])
 
 _SCHWAB_AUTH_URL = "https://api.schwabapi.com/v1/oauth/authorize"
 _SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"

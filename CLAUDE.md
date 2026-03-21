@@ -44,6 +44,11 @@ gateway/
     health.py        # GET /health
     bars.py          # GET /bars/{symbol}, /daily/{symbol}, /weekly/{symbol}
     auth.py          # GET /reauth, POST /reauth/complete
+    instruments.py   # GET /instruments
+    quotes.py        # GET /quotes
+    stream.py        # WS /stream
+    llm_docs.py      # GET /llm-docs
+  llm_docs.md        # machine-readable API reference (served by llm_docs.py)
   monitoring/
     token_monitor.py # asyncio background task, runs every 12h
 tests/
@@ -53,6 +58,15 @@ tests/
 ## Settings singleton
 
 `get_settings()` in `gateway/settings.py` caches a `Settings` instance in `_settings`. In tests, patch it with `monkeypatch.setattr("gateway.settings._settings", Settings(...))` — see `tests/conftest.py`.
+
+---
+
+## Quote and instrument endpoints
+
+- **`GET /quotes`** — wraps `client.get_quotes(symbols, fields=[...])`. Field groups: `quote`, `fundamental`, `extended`, `reference`, `regular`. Use `fundamental` for `companyName`, `sector`, `industry`; use `reference` for `description`, `exchange`, `cusip`. Response: `{"count": N, "data": {"SPY": {...}}}`.
+- **`GET /instruments`** — wraps `client.get_instruments(symbols, projection)`. Projection values: `fundamental`, `symbol-search`, `symbol-regex`, `desc-search`, `desc-regex`, `search`. Response: `{"projection": "...", "count": N, "data": {"SPY": {...}}}`.
+
+Both pass Schwab's JSON through directly — no polars transformation needed.
 
 ---
 
@@ -193,8 +207,10 @@ All data routes return:
 1. Add the route function to the appropriate router file (or create a new one in `gateway/routers/`).
 2. Register the router in `gateway/main.py` with `app.include_router(...)`.
 3. Add tests — stub `cs._client = mock_schwab_client([...])` in the test body.
-4. Add the request to `schwab-gateway.postman_collection.json` with an example response.
+4. Update `gateway/llm_docs.md` with the new endpoint's parameters, response shape, and any behavioural notes.
 5. Update the API reference table in `README.md`.
+
+Swagger UI (`/docs`) and the OpenAPI schema (`/openapi.json`) are auto-generated from docstrings and type hints — no manual maintenance needed.
 
 ---
 

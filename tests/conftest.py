@@ -4,6 +4,8 @@ No credentials or network access required — all Schwab HTTP calls are mocked.
 """
 from __future__ import annotations
 
+import inspect
+
 import json
 import time
 from pathlib import Path
@@ -80,6 +82,74 @@ def make_token_file(tmp_path: Path, age_seconds: float = 3600) -> Path:
         )
     )
     return token_path
+
+
+# ── MockStreamClient ───────────────────────────────────────────────────────────
+
+class MockStreamClient:
+    """Minimal StreamClient stand-in for tests.
+
+    Pass ``canned_messages`` as a list of ``(service_key, message_dict)`` pairs.
+    Each call to ``handle_message()`` dispatches one canned message to the
+    registered handler for that service, then raises ``WebSocketDisconnect``
+    when the list is exhausted.
+    """
+
+    def __init__(self, http_client=None, *, canned_messages=None):
+        self._handlers: dict[str, list] = {}
+        self._call_count = 0
+        self._canned: list[tuple[str, dict]] = canned_messages or []
+        self.logout_called = False
+
+    async def login(self) -> None:
+        pass
+
+    async def logout(self) -> None:
+        self.logout_called = True
+
+    # -- subscription methods (all no-ops) --
+    async def level_one_equity_subs(self, symbols, *, fields=None): pass
+    async def chart_equity_subs(self, symbols): pass
+    async def level_one_option_subs(self, symbols, *, fields=None): pass
+    async def level_one_futures_subs(self, symbols, *, fields=None): pass
+    async def chart_futures_subs(self, symbols): pass
+    async def level_one_forex_subs(self, symbols, *, fields=None): pass
+    async def level_one_futures_options_subs(self, symbols, *, fields=None): pass
+    async def nyse_book_subs(self, symbols): pass
+    async def nasdaq_book_subs(self, symbols): pass
+    async def options_book_subs(self, symbols): pass
+    async def screener_equity_subs(self, symbols): pass
+    async def screener_option_subs(self, symbols): pass
+    async def account_activity_sub(self): pass
+
+    # -- handler registration --
+    def _register(self, service_key: str, handler) -> None:
+        self._handlers.setdefault(service_key, []).append(handler)
+
+    def add_level_one_equity_handler(self, h): self._register("LEVELONE_EQUITIES", h)
+    def add_chart_equity_handler(self, h): self._register("CHART_EQUITY", h)
+    def add_level_one_option_handler(self, h): self._register("LEVELONE_OPTIONS", h)
+    def add_level_one_futures_handler(self, h): self._register("LEVELONE_FUTURES", h)
+    def add_chart_futures_handler(self, h): self._register("CHART_FUTURES", h)
+    def add_level_one_forex_handler(self, h): self._register("LEVELONE_FOREX", h)
+    def add_level_one_futures_options_handler(self, h): self._register("LEVELONE_FUTURES_OPTIONS", h)
+    def add_nyse_book_handler(self, h): self._register("NYSE_BOOK", h)
+    def add_nasdaq_book_handler(self, h): self._register("NASDAQ_BOOK", h)
+    def add_options_book_handler(self, h): self._register("OPTIONS_BOOK", h)
+    def add_screener_equity_handler(self, h): self._register("SCREENER_EQUITY", h)
+    def add_screener_option_handler(self, h): self._register("SCREENER_OPTION", h)
+    def add_account_activity_handler(self, h): self._register("ACCT_ACTIVITY", h)
+
+    async def handle_message(self) -> None:
+        from fastapi import WebSocketDisconnect
+        if self._call_count >= len(self._canned):
+            raise WebSocketDisconnect()
+        service_key, msg = self._canned[self._call_count]
+        self._call_count += 1
+        for handler in self._handlers.get(service_key, []):
+            result = handler(msg)
+            if inspect.isawaitable(result):
+                await result
 
 
 # ── App fixture ────────────────────────────────────────────────────────────────

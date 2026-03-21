@@ -7,8 +7,10 @@ services:
       - "8182:8182"
     restart: always
     env_file: .env
+    command: ["uv", "run", "uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8182", "--reload"]
     volumes:
       - schwab_token:/root/.schwab
+      - ./gateway:/app/gateway
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8182/health"]
       interval: 30s

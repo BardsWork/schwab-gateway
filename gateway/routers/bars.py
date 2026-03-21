@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from gateway import client_state
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["Market Data"])
 
 VALID_FREQUENCIES = [1, 5, 10, 15, 30, 60]
 
