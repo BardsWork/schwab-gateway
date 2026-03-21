@@ -1,6 +1,8 @@
 services:
   schwab-gateway:
-    build: .
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
     ports:
       - "8182:8182"
     restart: always
