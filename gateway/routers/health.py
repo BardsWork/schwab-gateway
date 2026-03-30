@@ -33,7 +33,7 @@ def health() -> dict[str, Any]:
             token_info = {
                 "age_hours": round(age_h, 2),
                 "refresh_expires_in_hours": round(refresh_left_h, 2),
-                "access_expires_at": refresh_expires,
+                "refresh_expires_at": refresh_expires,
             }
         except Exception as exc:
             token_info = {"error": str(exc)}
