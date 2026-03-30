@@ -50,30 +50,34 @@ def _candles_to_raw_df(candles: list[dict]) -> pl.DataFrame:
     )
 
 
-def _apply_rth_filter(df: pl.DataFrame) -> pl.DataFrame:
-    """Convert ts_ms → timestamp (ET) and keep only RTH bars (09:30–15:59)."""
+_RTH_EXPR = (
+    (pl.col("timestamp").dt.hour() >= 9)
+    & ((pl.col("timestamp").dt.hour() > 9) | (pl.col("timestamp").dt.minute() >= 30))
+    & (pl.col("timestamp").dt.hour() < 16)
+)
+
+
+def _ts_ms_to_et(df: pl.DataFrame) -> pl.DataFrame:
+    """Convert ts_ms → timestamp (ET timezone), no RTH filter."""
     return (
         df.with_columns(
             pl.from_epoch("ts_ms", time_unit="ms")
             .dt.convert_time_zone("America/New_York")
             .alias("timestamp")
         )
-        .filter(
-            (pl.col("timestamp").dt.hour() >= 9)
-            & (
-                (pl.col("timestamp").dt.hour() > 9)
-                | (pl.col("timestamp").dt.minute() >= 30)
-            )
-            & (pl.col("timestamp").dt.hour() < 16)
-        )
         .drop("ts_ms")
         .sort("timestamp")
     )
 
 
-def _resample_to_hourly(df: pl.DataFrame) -> pl.DataFrame:
-    """Resample an RTH-filtered intraday DataFrame to 60-min OHLCV bars."""
-    return (
+def _apply_rth_filter(df: pl.DataFrame) -> pl.DataFrame:
+    """Convert ts_ms → timestamp (ET) and keep only RTH bars (09:30–15:59)."""
+    return _ts_ms_to_et(df).filter(_RTH_EXPR)
+
+
+def _resample_to_hourly(df: pl.DataFrame, rth_only: bool = True) -> pl.DataFrame:
+    """Resample an intraday DataFrame (timestamp column, ET) to 60-min OHLCV bars."""
+    result = (
         df.sort("timestamp")
         .group_by_dynamic("timestamp", every="1h", closed="left")
         .agg(
@@ -85,17 +89,12 @@ def _resample_to_hourly(df: pl.DataFrame) -> pl.DataFrame:
                 pl.col("volume").sum(),
             ]
         )
-        # Re-apply RTH guard: drop the pre-9:30 bucket that group_by_dynamic creates
-        .filter(
-            (pl.col("timestamp").dt.hour() >= 9)
-            & (
-                (pl.col("timestamp").dt.hour() > 9)
-                | (pl.col("timestamp").dt.minute() >= 30)
-            )
-            & (pl.col("timestamp").dt.hour() < 16)
-        )
         .sort("timestamp")
     )
+    if rth_only:
+        # Drop the pre-9:30 bucket that group_by_dynamic creates at the boundary
+        result = result.filter(_RTH_EXPR)
+    return result
 
 
 def _candles_to_daily_df(candles: list[dict]) -> pl.DataFrame:
@@ -188,23 +187,26 @@ def get_bars(
         frequency=_intraday_freq_enum(fetch_min),
         start_datetime=start_dt,
         end_datetime=end_dt,
-        need_extended_hours_data=False,
+        need_extended_hours_data=not clean,
     )
     resp.raise_for_status()
     candles = resp.json().get("candles", [])
     if not candles:
         raise HTTPException(
             status_code=404,
-            detail=f"No intraday data for {symbol} ({from_date} → {to_date}). "
-            "Schwab intraday history covers ~10 calendar days.",
+            detail=(
+            f"No intraday data for {symbol} ({from_date} → {to_date}). "
+            f"Schwab history limit: ~48 days for 1-min bars, ~9 months for 5-min and higher."
+        ),
         )
 
     df = _candles_to_raw_df(candles)
 
-    if effective_resample or clean:
-        df = _apply_rth_filter(df)
     if effective_resample:
-        df = _resample_to_hourly(df)
+        df = _apply_rth_filter(df) if clean else _ts_ms_to_et(df)
+        df = _resample_to_hourly(df, rth_only=clean)
+    elif clean:
+        df = _apply_rth_filter(df)
 
     return _df_to_response(df, symbol)
 

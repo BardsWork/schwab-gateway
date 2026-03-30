@@ -28,7 +28,7 @@ Returns service and token status. No parameters.
   "token": {
     "age_hours": 1.5,
     "refresh_expires_in_hours": 166.5,
-    "access_expires_at": "2026-03-21T10:30:00"
+    "refresh_expires_at": "2026-03-28T10:30:00"
   }
 }
 ```
@@ -39,24 +39,32 @@ Returns service and token status. No parameters.
 
 ### GET /bars/{symbol}
 
-Intraday OHLCV bars. Schwab history covers approximately the last 10 calendar days.
+Intraday OHLCV bars. History limits: ~48 days for 1-min bars; ~9 months for 5-min and higher frequencies.
 
 | Param | Type | Default | Description |
 |---|---|---|---|
 | `from_date` | string | required | `YYYY-MM-DD` start (inclusive) |
 | `to_date` | string | required | `YYYY-MM-DD` end (inclusive) |
 | `frequency` | int | `5` | Bar size in minutes: `1`, `5`, `10`, `15`, `30`, `60` |
-| `clean` | bool | `true` | Filter to RTH 09:30–15:59 ET; parse timestamps to ISO strings |
-| `resample_60` | bool | `false` | Resample to hourly bars (implies `clean=true`) |
+| `clean` | bool | `true` | `true`: RTH only (09:30–15:59 ET), timestamps as ISO strings. `false`: full session including pre/after-market (requests extended hours from Schwab). |
+| `resample_60` | bool | `false` | Resample to hourly bars. RTH filtering controlled independently by `clean`. |
 
 `frequency=60` fetches 30-min bars internally and resamples — Schwab has no native 60-min bars.
 
-**`clean=true` response columns:** `timestamp` (ISO 8601 with timezone), `open`, `high`, `low`, `close`, `volume`
-**`clean=false` response columns:** `ts_ms` (epoch milliseconds), `open`, `high`, `low`, `close`, `volume`
+**Response column by mode:**
+
+| `clean` | `frequency` / `resample_60` | Time column | Session |
+|---|---|---|---|
+| `true` | any | `timestamp` (ISO 8601 with ET offset) | RTH only |
+| `false` | `< 60`, no resample | `ts_ms` (epoch milliseconds, UTC) | Full session |
+| `false` | `60` or `resample_60=true` | `timestamp` (ISO 8601 with ET offset) | Full session |
 
 ```
 GET /bars/SPY?from_date=2026-03-17&to_date=2026-03-21&frequency=5
 → {"symbol":"SPY","count":390,"data":[{"timestamp":"2026-03-17T09:30:00-04:00","open":591.0,...},...]}
+
+GET /bars/SPY?from_date=2026-03-17&to_date=2026-03-21&frequency=5&clean=false
+→ {"symbol":"SPY","count":780,"data":[{"ts_ms":1742204400000,"open":589.5,...},...]}
 ```
 
 ---
@@ -82,6 +90,66 @@ GET /daily/SPY?from_date=2025-01-01&to_date=2026-03-21
 ### GET /weekly/{symbol}
 
 Weekly OHLCV bars. Same parameters and column format as `/daily`.
+
+---
+
+### GET /options/{symbol}
+
+Fetch a flattened options chain for a symbol. Returns all calls and puts across all expirations (or a filtered subset), plus the underlying spot price and a sorted list of expiry dates.
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `strike_count` | int | `null` | Number of strikes centred around ATM. Omit for all strikes. |
+| `from_date` | string | `null` | Filter expirations from this date (`YYYY-MM-DD`, inclusive). |
+| `to_date` | string | `null` | Filter expirations up to this date (`YYYY-MM-DD`, inclusive). |
+
+**Response fields:**
+- `symbol` — normalised symbol (upper-case, `$` stripped)
+- `underlying_price` — last trade price of the underlying (falls back to `mark` if `lastPrice` is zero)
+- `expirations` — sorted list of unique expiry dates (`YYYY-MM-DD` strings)
+- `count` — total number of contract rows
+- `data` — flat list of contracts, sorted by expiry, then strike, then type (calls before puts)
+
+**Each contract object:**
+
+| Field | Type | Notes |
+|---|---|---|
+| `strike` | float | Strike price |
+| `expiry` | string | `YYYY-MM-DD` |
+| `type` | string | `"call"` or `"put"` |
+| `bid` | float | |
+| `ask` | float | |
+| `mid` | float | `(bid + ask) / 2` |
+| `last` | float | Last traded price |
+| `volume` | int | |
+| `open_interest` | int | |
+| `iv` | float | Annualised implied volatility as a decimal (e.g. `0.18` = 18 %) |
+| `delta` | float | |
+| `gamma` | float | |
+| `theta` | float | |
+| `vega` | float | |
+
+Missing or null greeks default to `0.0`. A defensive check rescales `iv` values if Schwab returns whole-number percentages (> 2.0) due to entitlement differences.
+
+```
+GET /options/SPY
+→ {
+    "symbol": "SPY",
+    "underlying_price": 500.0,
+    "expirations": ["2024-02-16", "2024-03-15"],
+    "count": 240,
+    "data": [
+      {"strike": 490.0, "expiry": "2024-02-16", "type": "call",
+       "bid": 11.0, "ask": 11.10, "mid": 11.05, "last": 11.0,
+       "volume": 5000, "open_interest": 20000,
+       "iv": 0.18, "delta": 0.62, "gamma": 0.02, "theta": -0.08, "vega": 0.25},
+      ...
+    ]
+  }
+
+GET /options/SPY?strike_count=10&from_date=2024-02-01&to_date=2024-02-28
+→ filtered chain, ±5 strikes around ATM, Feb expirations only
+```
 
 ---
 

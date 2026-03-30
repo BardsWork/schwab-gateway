@@ -19,9 +19,10 @@ schwab-gateway :8182   ←──── single token.json
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Service status + token expiry |
-| `GET` | `/bars/{symbol}` | Intraday OHLCV (last ~10 days) |
+| `GET` | `/bars/{symbol}` | Intraday OHLCV (~48 days for 1-min; ~9 months for 5-min+) |
 | `GET` | `/daily/{symbol}` | Daily OHLCV (back to ~1985) |
 | `GET` | `/weekly/{symbol}` | Weekly OHLCV |
+| `GET` | `/options/{symbol}` | Flattened options chain with greeks |
 | `GET` | `/instruments` | Symbol search and fundamental data |
 | `GET` | `/quotes` | Live quotes with bid/ask/last, fundamentals, sector, industry |
 | `WS` | `/stream` | Real-time streaming (level 1, charts, books, etc.) |
@@ -124,7 +125,7 @@ The Swagger UI at `/docs` lists all endpoints and lets you execute requests dire
   "token": {
     "age_hours": 1.5,
     "refresh_expires_in_hours": 166.5,
-    "access_expires_at": "2026-03-21T10:30:00"
+    "refresh_expires_at": "2026-04-05T10:30:00"
   }
 }
 ```
@@ -140,13 +141,12 @@ The Swagger UI at `/docs` lists all endpoints and lets you execute requests dire
 | `from_date` | string | required | `YYYY-MM-DD` start (inclusive) |
 | `to_date` | string | required | `YYYY-MM-DD` end (inclusive) |
 | `frequency` | int | `5` | Bar size: `1 \| 5 \| 10 \| 15 \| 30 \| 60` minutes |
-| `clean` | bool | `true` | Filter to RTH 09:30–16:00 ET, parse timestamps |
-| `resample_60` | bool | `false` | Resample to hourly bars (implies `clean=true`) |
+| `clean` | bool | `true` | `true`: RTH only (09:30–15:59 ET), timestamps as ISO strings. `false`: full session including pre/after-market. |
+| `resample_60` | bool | `false` | Resample to hourly bars. RTH filtering controlled independently by `clean`. |
 
-Schwab has no native 60-min bars — `frequency=60` or `resample_60=true` fetches 30-min internally and resamples.
+Schwab has no native 60-min bars — `frequency=60` or `resample_60=true` fetches 30-min internally and resamples. History limits: ~48 days for `frequency=1`; ~9 months for `frequency=5` and higher.
 
-**`clean=false`** response columns: `ts_ms, open, high, low, close, volume`
-**`clean=true`** response columns: `timestamp (ISO), open, high, low, close, volume`
+**Response time column:** `timestamp` (ISO 8601 with ET offset) when `clean=true` or when resampling (`frequency=60`/`resample_60=true`); `ts_ms` (epoch ms, UTC) when `clean=false` and no resampling.
 
 ```bash
 curl "http://localhost:8182/bars/SPY?from_date=2026-03-17&to_date=2026-03-21&frequency=5"
@@ -175,6 +175,29 @@ Same parameters as `/daily`. Each bar represents one calendar week.
 
 ---
 
+### `GET /options/{symbol}`
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `strike_count` | int | `null` | Number of strikes centred around ATM. Omit for all strikes. |
+| `from_date` | string | `null` | Filter expirations from this date (`YYYY-MM-DD`, inclusive). |
+| `to_date` | string | `null` | Filter expirations up to this date (`YYYY-MM-DD`, inclusive). |
+
+Returns a flattened options chain. The `$` prefix is stripped from symbols (e.g. `$SPY` → `SPY`).
+
+**Response envelope:** `{"symbol": "SPY", "underlying_price": 500.0, "expirations": ["2024-02-16", ...], "count": N, "data": [...]}`
+
+Each contract row: `strike`, `expiry` (YYYY-MM-DD), `type` (`"call"` or `"put"`), `bid`, `ask`, `mid`, `last`, `volume`, `open_interest`, `iv` (annualised decimal, e.g. `0.18` = 18%), `delta`, `gamma`, `theta`, `vega`.
+
+`underlying_price` uses `lastPrice`, falling back to `mark` if zero. Missing/null greeks default to `0.0`. A defensive rescale divides `iv` by 100 if Schwab returns whole-number percentages (> 2.0).
+
+```bash
+curl "http://localhost:8182/options/SPY"
+curl "http://localhost:8182/options/SPY?strike_count=10&from_date=2024-02-01&to_date=2024-02-28"
+```
+
+---
+
 ### `GET /instruments`
 
 | Param | Type | Default | Description |
@@ -189,7 +212,7 @@ curl "http://localhost:8182/instruments?symbols=SPY&projection=fundamental"
 curl "http://localhost:8182/instruments?symbols=SP&projection=symbol-search"
 ```
 
-Response: `{"projection": "fundamental", "count": 1, "data": {"SPY": {...}}}`
+Response: `{"projection": "fundamental", "count": 1, "data": {"instruments": [...]}}`
 
 ---
 
@@ -327,6 +350,7 @@ gateway/
   routers/
     health.py          # GET /health
     bars.py            # GET /bars, /daily, /weekly
+    options.py         # GET /options
     auth.py            # GET /reauth, POST /reauth/complete
     instruments.py     # GET /instruments
     quotes.py          # GET /quotes
@@ -339,6 +363,7 @@ tests/
   conftest.py          # mock helpers (no credentials needed)
   test_bars.py
   test_health.py
+  test_options.py
   test_token_utils.py
 .docker/Dockerfile     # python:3.11-slim + uv
 docker-compose.yml     # port 8182, named volume

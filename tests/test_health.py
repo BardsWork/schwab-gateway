@@ -46,7 +46,7 @@ class TestHealth:
         token = data["token"]
         assert "age_hours" in token
         assert "refresh_expires_in_hours" in token
-        assert "access_expires_at" in token
+        assert "refresh_expires_at" in token
 
     def test_age_hours_is_non_negative(self, test_app):
         data = test_app.get("/health").json()
@@ -58,6 +58,30 @@ class TestHealth:
         data = test_app.get("/health").json()
         assert data["status"] == "degraded"
         assert data["client_ready"] is False
+
+    def test_token_load_error_returns_error_key(self, tmp_path, monkeypatch):
+        """When token file exists but is corrupt, token dict should contain 'error'."""
+        from gateway.settings import Settings
+        import gateway.client_state as cs
+
+        token_path = tmp_path / "bad_token.json"
+        token_path.write_text("not valid json {{{")
+
+        monkeypatch.setattr(
+            "gateway.settings._settings",
+            Settings(
+                schwab_app_key="k",
+                schwab_api_secret="s",
+                schwab_callback_url="https://127.0.0.1",
+                token_path=token_path,
+            ),
+        )
+        monkeypatch.setattr(cs, "_client", MagicMock())
+
+        from gateway.main import app
+        client = TestClient(app, raise_server_exceptions=True)
+        data = client.get("/health").json()
+        assert "error" in data["token"]
 
     def test_token_error_when_file_missing(self, tmp_path, monkeypatch):
         from gateway.settings import Settings
