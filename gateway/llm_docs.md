@@ -407,6 +407,18 @@ Each message forwarded to the client:
 
 Field names in `content` are human-readable strings (not numeric codes).
 
+### Reconnect messages
+
+When the Schwab stream drops unexpectedly, the gateway attempts up to 3 reconnects with exponential backoff (2 s, 4 s, 8 s). Messages sent during this process:
+
+```json
+{"status": "reconnecting", "attempt": 1, "max_attempts": 3, "delay_seconds": 2.0}
+{"status": "reconnected",  "attempt": 1}
+{"error": "reconnect_failed", "detail": "Schwab stream failed after 3 reconnect attempts."}
+```
+
+If the frontend WebSocket closes during a reconnect attempt, the gateway stops reconnecting immediately.
+
 ### Error messages (sent before close)
 
 ```json

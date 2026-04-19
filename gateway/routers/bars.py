@@ -165,7 +165,7 @@ def get_bars(
 ) -> dict[str, Any]:
     """Fetch intraday OHLCV bars.
 
-    Schwab intraday history covers approximately the last 10 calendar days.
+    History limits: ~48 days for 1-min bars, ~9 months for 5-min and higher.
     ``frequency=60`` is accepted but Schwab has no native hourly bars — the
     service fetches 30-min bars and resamples via ``resample_60=true``.
     """
