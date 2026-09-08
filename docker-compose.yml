@@ -7,6 +7,9 @@ services:
       - "8182:8182"
     restart: always
     env_file: .env
+    networks:
+      - default
+      - schwab-net
     command: ["uv", "run", "uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8182", "--reload"]
     volumes:
       - schwab_token:/root/.schwab
@@ -20,3 +23,8 @@ services:
 
 volumes:
   schwab_token:
+
+networks:
+  default: {}
+  schwab-net:
+    external: true
