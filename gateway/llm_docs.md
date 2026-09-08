@@ -35,6 +35,8 @@ Returns service and token status. No parameters.
 
 `status` is `"degraded"` when `client_ready` is false.
 
+When the token file is missing or unreadable, `token` contains `{"error": "token file not found"}` or `{"error": "<exception message>"}` instead of the usual fields.
+
 ---
 
 ### GET /bars/{symbol}
@@ -328,6 +330,24 @@ Exchanges the authorization code, writes token, reinitialises the client.
 
 ---
 
+### GET /reauth/status
+
+Reports refresh token health without initiating a reauth attempt. No parameters.
+
+```json
+{"status": "ok", "remaining_days": 6.4}
+```
+
+`status` is one of `ok` / `expiring` / `expired` / `missing`. `remaining_days` is `null` when `status` is `missing`.
+
+---
+
+### GET /reauth/ui
+
+Returns an HTML page (`text/html`, not JSON) — a human-facing reauth flow (status line, "Start login" button, paste box for the callback URL) for renewing the token without curl. Not meant for programmatic/agent consumption; use `/reauth` + `/reauth/complete` instead.
+
+---
+
 ### GET /llm-docs
 
 Returns this document as `text/plain`. Use to give an AI agent up-to-date API context.
@@ -384,9 +404,69 @@ Real-time market data via the Schwab StreamClient. One connection per session.
 | `nyse_book` | NYSE order book (depth of market) |
 | `nasdaq_book` | NASDAQ order book |
 | `options_book` | Options order book |
-| `screener_equity` | Equity screener feed |
-| `screener_option` | Options screener feed |
+| `screener_equity` | Top movers/actives for an equity index (symbol = screener key, e.g. `$DJI_PERCENT_CHANGE_UP_60`) |
+| `screener_option` | Top movers/actives for options (symbol = screener key, e.g. `OPTION_PUT_VOLUME_30`) |
 | `account_activity` | Account order/fill activity (no symbols needed) |
+
+### Screener
+
+Screener "symbols" are structured keys, **not** individual stock tickers.
+
+**Equity screener key format:** `{INDEX}_{SORT_FIELD}_{FREQUENCY}`
+
+| Part | Valid values |
+|---|---|
+| INDEX | `$DJI`, `$COMPX`, `$SPX.X`, `NASDAQ`, `NYSE`, `OTCBB`, `EQUITY_ALL` |
+| SORT_FIELD | `VOLUME`, `TRADES`, `PERCENT_CHANGE_UP`, `PERCENT_CHANGE_DOWN` |
+| FREQUENCY (minutes) | `0` (all day), `1`, `5`, `10`, `30`, `60` |
+
+Example keys: `"$DJI_PERCENT_CHANGE_UP_60"`, `"NASDAQ_VOLUME_5"`, `"NYSE_TRADES_30"`
+
+**Options screener key format:** `OPTION_{PUT|CALL}_{SORT_FIELD}_{FREQUENCY}`
+
+Example keys: `"OPTION_PUT_PERCENT_CHANGE_UP_60"`, `"OPTION_CALL_VOLUME_30"`
+
+**ScreenerFields** in each message item:
+
+| Field | Meaning |
+|---|---|
+| `SYMBOL` | The screener key |
+| `TIMESTAMP` | Market snapshot timestamp (epoch ms) |
+| `SORT_FIELD` | The sort metric in effect |
+| `FREQUENCY` | The frequency window in effect |
+| `ITEMS` | Array of screener result objects (symbol, description, volume, last, net change, etc.) |
+
+Example subscription spec:
+```json
+{
+  "subscriptions": [
+    {"type": "screener_equity", "symbols": ["$DJI_PERCENT_CHANGE_UP_60", "NASDAQ_VOLUME_5"]},
+    {"type": "screener_option", "symbols": ["OPTION_PUT_PERCENT_CHANGE_UP_60"]}
+  ]
+}
+```
+
+Example screener message:
+```json
+{
+  "service": "SCREENER_EQUITY",
+  "content": {
+    "service": "SCREENER_EQUITY",
+    "timestamp": 1711022400000,
+    "command": "SUBS",
+    "content": [
+      {
+        "key": "$DJI_PERCENT_CHANGE_UP_60",
+        "SORT_FIELD": "PERCENT_CHANGE_UP",
+        "FREQUENCY": 60,
+        "ITEMS": [
+          {"symbol": "AAPL", "description": "Apple Inc", "last_price": 189.5, "net_change": 3.2}
+        ]
+      }
+    ]
+  }
+}
+```
 
 ### Stream message format
 

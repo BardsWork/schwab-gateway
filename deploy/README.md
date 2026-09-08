@@ -15,7 +15,13 @@ docker compose up -d --build
 ```
 
 The named volume `schwab_token` is created empty. Complete the reauth flow
-immediately to populate it:
+immediately to populate it.
+
+**Browser (recommended):** open `http://devbox.local:8182/reauth/ui` and follow
+the two steps on the page — no curl needed. Same flow whenever the refresh
+token expires later (every 7 days).
+
+**curl:**
 
 ```bash
 # 1. Get the Schwab authorization URL
@@ -31,8 +37,8 @@ curl -X POST http://devbox.local:8182/reauth/complete \
   -d '{"callback_url": "https://127.0.0.1?code=YOUR_CODE&state=YOUR_STATE"}'
 
 # 4. Verify
-curl http://devbox.local:8182/health
-# age_hours should be ~0
+curl http://devbox.local:8182/reauth/status
+# {"status": "ok", "remaining_days": 7.0}
 ```
 
 ## Routine operations

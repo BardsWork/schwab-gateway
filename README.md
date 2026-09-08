@@ -31,6 +31,8 @@ schwab-gateway :8182   ←──── single token.json
 | `GET` | `/openapi.json` | OpenAPI schema |
 | `GET` | `/reauth` | Generate Schwab authorization URL |
 | `POST` | `/reauth/complete` | Exchange code, write token, reinit client |
+| `GET` | `/reauth/status` | Refresh token health (`ok`/`expiring`/`expired`/`missing`) |
+| `GET` | `/reauth/ui` | Browser page that walks through renewing the token (no curl needed) |
 
 Data endpoints use the envelope `{"symbol": "SPY", "count": N, "data": [...]}`. The instruments endpoint uses `{"projection": "...", "count": N, "data": {...}}`.
 
@@ -88,9 +90,15 @@ No credentials or network access required — all Schwab calls are mocked.
 
 ---
 
-## First-time token setup (reauth flow)
+## First-time token setup / renewing an expired token (reauth flow)
 
-The service starts without a token — data endpoints return `503` until the flow is complete.
+The service starts without a token — data endpoints return `503` until the flow is complete. The refresh token expires 7 days after it's issued, so you'll need to repeat this periodically (the token monitor writes a reminder — see below).
+
+### Browser (recommended)
+
+Open **`http://localhost:8182/reauth/ui`** (or `http://devbox.local:8182/reauth/ui` in Docker). It shows the current token status, a "Start login" button that opens Schwab's login in a new tab, and a box to paste the callback URL you land on — no curl required.
+
+### curl
 
 ```bash
 # 1. Get the authorization URL
@@ -106,8 +114,8 @@ curl -X POST http://localhost:8182/reauth/complete \
   -d '{"callback_url": "https://127.0.0.1?code=YOUR_CODE&state=YOUR_STATE"}'
 
 # 3. Verify
-curl http://localhost:8182/health
-# "age_hours" should be ~0
+curl http://localhost:8182/reauth/status
+# {"status": "ok", "remaining_days": 7.0}
 ```
 
 The Swagger UI at `/docs` lists all endpoints and lets you execute requests directly in the browser.
@@ -288,14 +296,30 @@ Exchanges the code, writes `~/.schwab/token.json`, reinitialises the client.
 
 ---
 
+### `GET /reauth/status`
+
+```json
+{ "status": "ok", "remaining_days": 6.4 }
+```
+
+`status` is one of `ok` / `expiring` / `expired` / `missing`. `remaining_days` is `null` when `status` is `missing`.
+
+---
+
+### `GET /reauth/ui`
+
+Returns an HTML page (not JSON) that wraps `/reauth`, `/reauth/complete`, and `/reauth/status` into a single click-through flow — open it in a browser to renew without curl.
+
+---
+
 ## Token renewal
 
 The Schwab refresh token expires after **7 days**. The background monitor checks every 12 hours:
 
 - When fewer than `ALERT_THRESHOLD_DAYS` (default `2.0`) days remain, it writes `~/.schwab/token_alert.txt`.
-- `/health` always shows `refresh_expires_in_hours`.
+- `/health` always shows `refresh_expires_in_hours`; `/reauth/status` gives the same thing pre-digested for scripts.
 
-When the alert fires, repeat the reauth flow above.
+When the alert fires, open `/reauth/ui` in a browser and follow the two steps, or repeat the curl flow above.
 
 ---
 

@@ -43,7 +43,7 @@ gateway/
   routers/
     health.py        # GET /health
     bars.py          # GET /bars/{symbol}, /daily/{symbol}, /weekly/{symbol}
-    auth.py          # GET /reauth, POST /reauth/complete
+    auth.py          # GET /reauth, POST /reauth/complete, GET /reauth/status, GET /reauth/ui
     instruments.py   # GET /instruments
     quotes.py        # GET /quotes
     stream.py        # WS /stream
@@ -137,6 +137,8 @@ Instead:
 3. `POST /reauth/complete {"callback_url": "..."}` — verifies state, exchanges code via `httpx.post` to `https://api.schwabapi.com/v1/oauth/token` with Basic auth, calls `write_token()`, then `client_state.reset_client()`.
 
 The Schwab token endpoint uses HTTP Basic auth: `base64(app_key:api_secret)`.
+
+`GET /reauth/ui` wraps steps 1-3 in one HTML page (`_REAUTH_UI_HTML` in `auth.py`) — a "Start login" button that fetches `/reauth` and opens `auth_url` in a new tab, plus a paste box that POSTs to `/reauth/complete` via `fetch()`. It exists because the raw curl-based flow above is annoying to do from a phone/browser when the token has expired; it doesn't change the underlying flow, it just drives the same three endpoints from JS instead of a terminal. `GET /reauth/status` (`ok`/`expiring`/`expired`/`missing` + `remaining_days`) backs its status line and reuses `token_utils.refresh_token_expires_in` — the same calculation `token_monitor.py` uses for its 12h alert check, so keep them in sync if the threshold logic changes.
 
 ---
 
