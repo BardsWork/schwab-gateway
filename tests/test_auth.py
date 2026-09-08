@@ -1,11 +1,30 @@
-"""Tests for GET /reauth and POST /reauth/complete."""
+"""Tests for GET /reauth, POST /reauth/complete, /reauth/status, and /reauth/ui."""
 import base64
+import json
+import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
 
 import gateway.routers.auth as auth_mod
+
+
+def _write_token(path: Path, age_seconds: float = 3600) -> None:
+    now = time.time()
+    path.write_text(json.dumps({
+        "creation_timestamp": now - age_seconds,
+        "token": {
+            "expires_in": 1800,
+            "token_type": "Bearer",
+            "scope": "api",
+            "refresh_token": "r",
+            "access_token": "a",
+            "id_token": "i",
+            "expires_at": now + 1800,
+        },
+    }))
 
 
 def _set_pending_state(state: str | None) -> None:
@@ -198,3 +217,58 @@ class TestPostReauthComplete:
         )
         assert resp.status_code == 502
         assert "request failed" in resp.json()["detail"].lower()
+
+
+class TestReauthStatus:
+    def test_ok_when_freshly_created(self, test_app):
+        # test_app fixture writes a token 1 hour old — well inside the 7-day window
+        resp = test_app.get("/reauth/status")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+        assert resp.json()["remaining_days"] > 6
+
+    def test_expiring_within_alert_threshold(self, test_app):
+        from gateway.settings import get_settings
+
+        settings = get_settings()
+        _write_token(settings.token_path, age_seconds=7 * 86_400 - 3600)  # 1h left
+
+        resp = test_app.get("/reauth/status")
+        assert resp.json()["status"] == "expiring"
+        assert 0 < resp.json()["remaining_days"] < settings.alert_threshold_days
+
+    def test_expired(self, test_app):
+        from gateway.settings import get_settings
+
+        settings = get_settings()
+        _write_token(settings.token_path, age_seconds=8 * 86_400)  # 1 day past TTL
+
+        resp = test_app.get("/reauth/status")
+        assert resp.json()["status"] == "expired"
+        assert resp.json()["remaining_days"] < 0
+
+    def test_missing_token_file(self, test_app):
+        from gateway.settings import get_settings
+
+        get_settings().token_path.unlink()
+
+        resp = test_app.get("/reauth/status")
+        assert resp.json() == {"status": "missing", "remaining_days": None}
+
+    def test_unreadable_token_file(self, test_app):
+        from gateway.settings import get_settings
+
+        get_settings().token_path.write_text("not json")
+
+        resp = test_app.get("/reauth/status")
+        assert resp.json() == {"status": "missing", "remaining_days": None}
+
+
+class TestReauthUi:
+    def test_returns_html_page(self, test_app):
+        resp = test_app.get("/reauth/ui")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "Start login" in resp.text
+        assert "/reauth/status" in resp.text
+        assert "/reauth/complete" in resp.text

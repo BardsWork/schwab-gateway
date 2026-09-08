@@ -54,12 +54,13 @@ def _check_expiry() -> None:
 
 
 def _send_alert(remaining_days: float, token_path: Path) -> None:
+    settings = get_settings()
     alert_file = token_path.parent / "token_alert.txt"
     status = "EXPIRED" if remaining_days <= 0 else f"expires in {remaining_days:.1f} days"
     message = (
         f"[schwab-gateway] Refresh token alert — {datetime.now().isoformat()}\n"
         f"Status  : {status}\n"
-        f"Action  : Run  GET /reauth  then  POST /reauth/complete  to renew.\n"
+        f"Action  : Open http://<gateway-host>:{settings.port}/reauth/ui in a browser to renew.\n"
     )
 
     try:
