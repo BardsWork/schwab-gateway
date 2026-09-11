@@ -355,3 +355,83 @@ class TestStreamReconnect:
                         break
 
         assert any("exhausted" in r.message for r in caplog.records)
+
+
+class TestScreenerSubscription:
+    """Screener subscription acceptance and message forwarding."""
+
+    def test_screener_equity_subscription_receives_ack(self, test_app, monkeypatch):
+        cs._client = MagicMock()
+        mock_sc = MockStreamClient(canned_messages=[])
+        _patch_stream_client(monkeypatch, mock_sc)
+
+        with test_app.websocket_connect("/stream") as ws:
+            ws.send_json({
+                "subscriptions": [
+                    {"type": "screener_equity", "symbols": ["$DJI_PERCENT_CHANGE_UP_60"]}
+                ]
+            })
+            ack = ws.receive_json()
+        assert ack["status"] == "subscribed"
+        assert ack["count"] == 1
+
+    def test_screener_option_subscription_receives_ack(self, test_app, monkeypatch):
+        cs._client = MagicMock()
+        mock_sc = MockStreamClient(canned_messages=[])
+        _patch_stream_client(monkeypatch, mock_sc)
+
+        with test_app.websocket_connect("/stream") as ws:
+            ws.send_json({
+                "subscriptions": [
+                    {"type": "screener_option", "symbols": ["OPTION_PUT_PERCENT_CHANGE_UP_60"]}
+                ]
+            })
+            ack = ws.receive_json()
+        assert ack["status"] == "subscribed"
+        assert ack["count"] == 1
+
+    def test_screener_equity_message_forwarded(self, test_app, monkeypatch):
+        cs._client = MagicMock()
+        canned_msg = {
+            "service": "SCREENER_EQUITY",
+            "timestamp": 1711022400000,
+            "command": "SUBS",
+            "content": [{"key": "$DJI_PERCENT_CHANGE_UP_60", "ITEMS": [{"symbol": "AAPL"}]}],
+        }
+        mock_sc = MockStreamClient(canned_messages=[("SCREENER_EQUITY", canned_msg)])
+        _patch_stream_client(monkeypatch, mock_sc)
+
+        with test_app.websocket_connect("/stream") as ws:
+            ws.send_json({
+                "subscriptions": [
+                    {"type": "screener_equity", "symbols": ["$DJI_PERCENT_CHANGE_UP_60"]}
+                ]
+            })
+            _ack = ws.receive_json()
+            data = ws.receive_json()
+
+        assert data["service"] == "SCREENER_EQUITY"
+        assert data["content"] == canned_msg
+
+    def test_screener_option_message_forwarded(self, test_app, monkeypatch):
+        cs._client = MagicMock()
+        canned_msg = {
+            "service": "SCREENER_OPTION",
+            "timestamp": 1711022400000,
+            "command": "SUBS",
+            "content": [{"key": "OPTION_CALL_VOLUME_30", "ITEMS": [{"symbol": "SPY   240119C00500000"}]}],
+        }
+        mock_sc = MockStreamClient(canned_messages=[("SCREENER_OPTION", canned_msg)])
+        _patch_stream_client(monkeypatch, mock_sc)
+
+        with test_app.websocket_connect("/stream") as ws:
+            ws.send_json({
+                "subscriptions": [
+                    {"type": "screener_option", "symbols": ["OPTION_CALL_VOLUME_30"]}
+                ]
+            })
+            _ack = ws.receive_json()
+            data = ws.receive_json()
+
+        assert data["service"] == "SCREENER_OPTION"
+        assert data["content"] == canned_msg
