@@ -92,11 +92,25 @@ class TestTransactions:
         assert r.json() == {"count": 1, "data": TRANSACTIONS}
         cs._client.get_transactions.assert_called_once_with(
             "HASH1",
-            start_date=date(2024, 1, 2),
-            end_date=date(2024, 1, 31),
+            start_date=datetime.combine(date(2024, 1, 2), time.min),
+            end_date=datetime.combine(date(2024, 1, 31), time.max),
             transaction_types=[Client.Transactions.TransactionType.TRADE],
             symbol="SPY",
         )
+
+    def test_defaults_to_last_60_days(self, test_app):
+        cs._client.get_transactions.return_value = _mock_resp([])
+        test_app.get("/accounts/HASH1/transactions")
+        kwargs = cs._client.get_transactions.call_args.kwargs
+        assert kwargs["end_date"] == datetime.combine(date.today(), time.max)
+        assert (kwargs["end_date"].date() - kwargs["start_date"].date()).days == 60
+
+    def test_to_date_only_anchors_start_to_to_date(self, test_app):
+        cs._client.get_transactions.return_value = _mock_resp([])
+        test_app.get("/accounts/HASH1/transactions", params={"to_date": "2024-03-31"})
+        kwargs = cs._client.get_transactions.call_args.kwargs
+        assert kwargs["start_date"] == datetime.combine(date(2024, 1, 31), time.min)
+        assert kwargs["end_date"] == datetime.combine(date(2024, 3, 31), time.max)
 
     def test_multiple_types(self, test_app):
         cs._client.get_transactions.return_value = _mock_resp([])
