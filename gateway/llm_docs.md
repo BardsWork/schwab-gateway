@@ -1,7 +1,7 @@
 # schwab-gateway API Reference
 
 **Service:** Local HTTP proxy for Schwab market-data and streaming.
-**Base URL:** `http://192.168.1.177:8182` (devbox) or `http://localhost:8182` (local dev)
+**Base URL:** `http://localhost:8182`
 **Purpose:** Centralises Schwab OAuth token management. Consuming projects call this service — no `schwab-py` dependency, no local `token.json` needed.
 
 ---
@@ -408,7 +408,7 @@ Real-time market data via the Schwab StreamClient. One connection per session.
 
 ### Connection protocol
 
-1. **Connect** to `ws://192.168.1.177:8182/stream`.
+1. **Connect** to `ws://localhost:8182/stream`.
 2. **Send** a JSON subscription spec within 10 seconds.
 3. **Receive** `{"status": "subscribed", "count": N}` on success.
 4. **Receive** stream messages indefinitely.

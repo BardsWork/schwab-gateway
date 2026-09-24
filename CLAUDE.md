@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 A single-purpose local HTTP microservice that owns the Schwab OAuth token and proxies market-data calls. Every project on the local network hits this service over HTTP — no `schwab-py` dependency, no local `token.json` in consuming projects.
 
-Port **8182**. Deployed via Docker Compose on a devbox at `192.168.1.177`.
+Port **8182**. Deployed via Docker Compose on the devbox, reachable at `http://localhost:8182`.
 
 ---
 
@@ -231,7 +231,7 @@ uv add --dev <package>    # test/dev only
 
 ## Consuming service (derivatives-analysis)
 
-`api/schwab/gateway_client.py` is the thin wrapper. It targets `http://192.168.1.177:8182`. The three public functions mirror the old `client.py` signatures minus the `client` argument:
+`api/schwab/gateway_client.py` is the thin wrapper. It targets the gateway at `http://localhost:8182`. The three public functions mirror the old `client.py` signatures minus the `client` argument:
 
 ```python
 fetch_bars(symbol, from_date, to_date, frequency=5, clean=True, resample_60=False) -> pl.DataFrame

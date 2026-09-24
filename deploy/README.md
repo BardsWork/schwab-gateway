@@ -17,7 +17,7 @@ docker compose up -d --build
 The named volume `schwab_token` is created empty. Complete the reauth flow
 immediately to populate it.
 
-**Browser (recommended):** open `http://devbox.local:8182/reauth/ui` and follow
+**Browser (recommended):** open `http://localhost:8182/reauth/ui` and follow
 the two steps on the page — no curl needed. Same flow whenever the refresh
 token expires later (every 7 days).
 
@@ -25,19 +25,19 @@ token expires later (every 7 days).
 
 ```bash
 # 1. Get the Schwab authorization URL
-curl http://devbox.local:8182/reauth
+curl http://localhost:8182/reauth
 
 # 2. Open the returned auth_url in a browser, log in (MFA as normal).
 #    You will be redirected to your callback URL (e.g. https://127.0.0.1?code=...&state=...).
 #    Copy the full URL from the address bar.
 
 # 3. Exchange the code
-curl -X POST http://devbox.local:8182/reauth/complete \
+curl -X POST http://localhost:8182/reauth/complete \
   -H "Content-Type: application/json" \
   -d '{"callback_url": "https://127.0.0.1?code=YOUR_CODE&state=YOUR_STATE"}'
 
 # 4. Verify
-curl http://devbox.local:8182/reauth/status
+curl http://localhost:8182/reauth/status
 # {"status": "ok", "remaining_days": 7.0}
 ```
 
@@ -69,9 +69,8 @@ the devbox.
 
 ## Port
 
-The service listens on **8182** by default. Accessible at
-`http://devbox.local:8182` (or `http://192.168.1.177:8182`) from any machine
-on the local network.
+The service listens on **8182** by default: `http://localhost:8182` on the
+devbox. Addresses are not hardcoded here because the devbox's LAN IP changes.
 
 ## Updating derivatives-analysis notebooks
 

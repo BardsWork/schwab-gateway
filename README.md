@@ -99,7 +99,7 @@ The service starts without a token — data endpoints return `503` until the flo
 
 ### Browser (recommended)
 
-Open **`http://localhost:8182/reauth/ui`** (or `http://devbox.local:8182/reauth/ui` in Docker). It shows the current token status, a "Start login" button that opens Schwab's login in a new tab, and a box to paste the callback URL you land on — no curl required.
+Open **`http://localhost:8182/reauth/ui`**. It shows the current token status, a "Start login" button that opens Schwab's login in a new tab, and a box to paste the callback URL you land on — no curl required.
 
 ### curl
 
@@ -376,9 +376,9 @@ docker compose up -d --build
 The named volume `schwab_token` persists `token.json` across restarts and rebuilds. Complete the reauth flow once after first deploy:
 
 ```bash
-curl http://devbox.local:8182/reauth
+curl http://localhost:8182/reauth
 # open URL, complete login, copy callback URL
-curl -X POST http://devbox.local:8182/reauth/complete \
+curl -X POST http://localhost:8182/reauth/complete \
   -H "Content-Type: application/json" \
   -d '{"callback_url": "https://127.0.0.1?code=...&state=..."}'
 ```
