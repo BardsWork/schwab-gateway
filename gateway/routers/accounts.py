@@ -94,10 +94,13 @@ def get_transactions(
             detail=f"Invalid type(s): {invalid}. Valid options: {sorted(_VALID_TYPES)}",
         )
 
+    to_date = to_date or date.today()
+    from_date = from_date or to_date - timedelta(days=60)
+
     resp = _require_client().get_transactions(
         account_hash,
-        start_date=from_date,
-        end_date=to_date,
+        start_date=datetime.combine(from_date, time.min),
+        end_date=datetime.combine(to_date, time.max),
         transaction_types=[_Transactions.TransactionType(t) for t in type_list],
         symbol=symbol.upper() if symbol else None,
     )
