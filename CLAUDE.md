@@ -45,6 +45,7 @@ gateway/
     bars.py          # GET /bars/{symbol}, /daily/{symbol}, /weekly/{symbol}
     auth.py          # GET /reauth, POST /reauth/complete, GET /reauth/status, GET /reauth/ui
     instruments.py   # GET /instruments
+    accounts.py      # GET /accounts, /accounts/{hash}/orders, /accounts/{hash}/transactions
     quotes.py        # GET /quotes
     stream.py        # WS /stream
     llm_docs.py      # GET /llm-docs

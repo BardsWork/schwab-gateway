@@ -241,6 +241,44 @@ Top-level fields always present: `assetMainType`, `assetSubType`, `quoteType`, `
 
 ---
 
+### GET /accounts
+
+List linked accounts. Schwab addresses accounts by `hashValue`, not account number; use it as `{account_hash}` in the endpoints below.
+
+**Response:** `{"count": 1, "data": [{"accountNumber": "12345678", "hashValue": "ABC..."}]}`
+
+---
+
+### GET /accounts/{account_hash}/orders
+
+Order history for one account. Schwab's order objects are passed through unmodified.
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `from_date` | string | 60 days ago | `YYYY-MM-DD`, inclusive |
+| `to_date` | string | today | `YYYY-MM-DD`, inclusive |
+| `status` | string | all | One order status, e.g. `FILLED`, `WORKING`, `CANCELED`, `REJECTED`, `EXPIRED` |
+| `max_results` | int | Schwab default | Maximum number of orders |
+
+**Response:** `{"count": N, "data": [...]}`. `400` for an unknown `status`, `422` for a malformed date.
+
+---
+
+### GET /accounts/{account_hash}/transactions
+
+Transactions for one account (fills, dividends, transfers). Schwab's objects are passed through unmodified.
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `from_date` | string | 60 days ago | `YYYY-MM-DD` |
+| `to_date` | string | today | `YYYY-MM-DD` |
+| `types` | string | `TRADE` | Comma-separated: `TRADE`, `DIVIDEND_OR_INTEREST`, `RECEIVE_AND_DELIVER`, `JOURNAL`, `ACH_RECEIPT`, `ACH_DISBURSEMENT`, `CASH_RECEIPT`, `CASH_DISBURSEMENT`, `ELECTRONIC_FUND`, `WIRE_IN`, `WIRE_OUT`, `MEMORANDUM`, `MARGIN_CALL`, `MONEY_MARKET`, `SMA_ADJUSTMENT` |
+| `symbol` | string | all | Only transactions for this symbol |
+
+**Response:** `{"count": N, "data": [...]}`. `400` for an unknown type.
+
+---
+
 ### GET /instruments
 
 Search for instruments or retrieve fundamental financial data.
