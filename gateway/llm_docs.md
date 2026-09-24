@@ -12,6 +12,7 @@
 - Standard REST envelope: `{"symbol": "SPY", "count": N, "data": [...]}`.
 - Instruments envelope: `{"projection": "fundamental", "count": N, "data": {...}}`.
 - Error envelope: FastAPI default `{"detail": "..."}`.
+- Account date ranges (`/orders`, `/transactions`) cover whole days, 00:00:00 to 23:59:59 UTC.
 
 ---
 
@@ -255,7 +256,7 @@ Order history for one account. Schwab's order objects are passed through unmodif
 
 | Param | Type | Default | Description |
 |---|---|---|---|
-| `from_date` | string | 60 days ago | `YYYY-MM-DD`, inclusive |
+| `from_date` | string | 60 days before `to_date` | `YYYY-MM-DD`, inclusive |
 | `to_date` | string | today | `YYYY-MM-DD`, inclusive |
 | `status` | string | all | One order status, e.g. `FILLED`, `WORKING`, `CANCELED`, `REJECTED`, `EXPIRED` |
 | `max_results` | int | Schwab default | Maximum number of orders |
@@ -270,12 +271,12 @@ Transactions for one account (fills, dividends, transfers). Schwab's objects are
 
 | Param | Type | Default | Description |
 |---|---|---|---|
-| `from_date` | string | 60 days ago | `YYYY-MM-DD` |
-| `to_date` | string | today | `YYYY-MM-DD` |
+| `from_date` | string | 60 days before `to_date` | `YYYY-MM-DD`, inclusive |
+| `to_date` | string | today | `YYYY-MM-DD`, inclusive |
 | `types` | string | `TRADE` | Comma-separated: `TRADE`, `DIVIDEND_OR_INTEREST`, `RECEIVE_AND_DELIVER`, `JOURNAL`, `ACH_RECEIPT`, `ACH_DISBURSEMENT`, `CASH_RECEIPT`, `CASH_DISBURSEMENT`, `ELECTRONIC_FUND`, `WIRE_IN`, `WIRE_OUT`, `MEMORANDUM`, `MARGIN_CALL`, `MONEY_MARKET`, `SMA_ADJUSTMENT` |
 | `symbol` | string | all | Only transactions for this symbol |
 
-**Response:** `{"count": N, "data": [...]}`. `400` for an unknown type.
+**Response:** `{"count": N, "data": [...]}`. `400` for an unknown type, `422` for a malformed date.
 
 ---
 
