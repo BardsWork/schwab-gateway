@@ -1,7 +1,7 @@
 # schwab-gateway API Reference
 
 **Service:** Local HTTP proxy for Schwab market-data and streaming.
-**Base URL:** `http://localhost:8182` (devbox) or `http://localhost:8182` (local dev)
+**Base URL:** `http://localhost:8182`
 **Purpose:** Centralises Schwab OAuth token management. Consuming projects call this service — no `schwab-py` dependency, no local `token.json` needed.
 
 ---

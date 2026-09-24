@@ -41,7 +41,7 @@ app = FastAPI(
         "Local HTTP proxy for Schwab market data. Centralises OAuth token management so "
         "every project on the local network can call market-data endpoints without holding "
         "credentials or managing token files.\n\n"
-        "**Base URL (devbox):** `http://localhost:8182`\n\n"
+        "**Base URL:** `http://localhost:8182`\n\n"
         "**All data endpoints return `503`** until the reauth flow is completed "
         "(see the Auth section).\n\n"
         "**Machine-readable API reference for AI agents:** `GET /llm-docs`"
