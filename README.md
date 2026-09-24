@@ -23,6 +23,9 @@ schwab-gateway :8182   ←──── single token.json
 | `GET` | `/daily/{symbol}` | Daily OHLCV (back to ~1985) |
 | `GET` | `/weekly/{symbol}` | Weekly OHLCV |
 | `GET` | `/options/{symbol}` | Flattened options chain with greeks |
+| `GET` | `/accounts` | Linked accounts and their hashes |
+| `GET` | `/accounts/{account_hash}/orders` | Order history for an account |
+| `GET` | `/accounts/{account_hash}/transactions` | Transactions (trades, dividends, transfers) for an account |
 | `GET` | `/instruments` | Symbol search and fundamental data |
 | `GET` | `/quotes` | Live quotes with bid/ask/last, fundamentals, sector, industry |
 | `WS` | `/stream` | Real-time streaming (level 1, charts, books, etc.) |
@@ -203,6 +206,46 @@ Each contract row: `strike`, `expiry` (YYYY-MM-DD), `type` (`"call"` or `"put"`)
 curl "http://localhost:8182/options/SPY"
 curl "http://localhost:8182/options/SPY?strike_count=10&from_date=2024-02-01&to_date=2024-02-28"
 ```
+
+---
+
+### `GET /accounts`
+
+Lists linked accounts as `{"count": N, "data": [{"accountNumber": "...", "hashValue": "..."}]}`. Schwab addresses accounts by `hashValue`; use it as `{account_hash}` below.
+
+---
+
+### `GET /accounts/{account_hash}/orders`
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `from_date` | string | 60 days ago | `YYYY-MM-DD` start (inclusive) |
+| `to_date` | string | today | `YYYY-MM-DD` end (inclusive) |
+| `status` | string | all | One order status, e.g. `FILLED`, `WORKING`, `CANCELED` |
+| `max_results` | int | Schwab default | Maximum number of orders |
+
+```bash
+curl "http://localhost:8182/accounts/$HASH/orders?status=FILLED"
+```
+
+Response: `{"count": N, "data": [...]}` — Schwab's order objects, unmodified.
+
+---
+
+### `GET /accounts/{account_hash}/transactions`
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `from_date` | string | 60 days ago | `YYYY-MM-DD` |
+| `to_date` | string | today | `YYYY-MM-DD` |
+| `types` | string | `TRADE` | Comma-separated, e.g. `TRADE,DIVIDEND_OR_INTEREST` |
+| `symbol` | string | all | Only transactions for this symbol |
+
+```bash
+curl "http://localhost:8182/accounts/$HASH/transactions?symbol=SPY"
+```
+
+Response: `{"count": N, "data": [...]}` — Schwab's transaction objects, unmodified.
 
 ---
 

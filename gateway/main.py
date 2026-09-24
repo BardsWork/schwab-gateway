@@ -8,7 +8,7 @@ from fastapi import FastAPI
 
 from gateway import client_state
 from gateway.monitoring.token_monitor import run_token_monitor
-from gateway.routers import auth, bars, health, instruments, llm_docs, options, quotes, stream
+from gateway.routers import accounts, auth, bars, health, instruments, llm_docs, options, quotes, stream
 from gateway.settings import get_settings
 
 logging.basicConfig(
@@ -51,6 +51,7 @@ app = FastAPI(
 )
 
 app.include_router(health.router)
+app.include_router(accounts.router)
 app.include_router(bars.router)
 app.include_router(options.router)
 app.include_router(auth.router)
