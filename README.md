@@ -331,6 +331,8 @@ Real-time market data via the Schwab StreamClient.
 
 `account_activity` requires no `symbols` field. All other types require a non-empty `symbols` list.
 
+Each `/stream` connection opens its own Schwab streamer session. Schwab limits how many sessions one account can hold, so a second client can interrupt the first. The gateway then reconnects the interrupted one (up to 3 attempts) and sends `{"status": "reconnecting"}` / `{"status": "reconnected"}` messages while it does.
+
 ---
 
 ### `GET /llm-docs`
