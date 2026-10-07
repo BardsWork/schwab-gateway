@@ -107,6 +107,10 @@ class TestCheckExpiry:
 # ── _send_alert ───────────────────────────────────────────────────────────────
 
 class TestSendAlert:
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch, tmp_path):
+        _patch_settings(monkeypatch, tmp_path / "token.json")
+
     def test_writes_alert_file(self, tmp_path):
         token_path = tmp_path / "token.json"
         with patch("subprocess.run", return_value=MagicMock(returncode=1)):

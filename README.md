@@ -1,16 +1,34 @@
 # schwab-gateway
 
-Local HTTP microservice that owns the Schwab OAuth token centrally so every project on your network can call market-data endpoints without holding credentials or managing token files.
+[![test](https://github.com/BardsWork/schwab-gateway/actions/workflows/test.yml/badge.svg)](https://github.com/BardsWork/schwab-gateway/actions/workflows/test.yml)
+
+A small HTTP service that holds your Schwab OAuth token in one place. Your notebooks, scripts and apps call it over plain HTTP for market data, option chains, quotes, streaming and account history. None of them need `schwab-py`, your app key, or a `token.json`.
 
 ```
-any notebook / script
-        │  HTTP
+any notebook / script / app
+        │  HTTP or WebSocket
         ▼
-schwab-gateway :8182   ←──── single token.json
+schwab-gateway :8182   ←──── one token.json
         │  schwab-py
         ▼
   Schwab API
 ```
+
+## Why
+
+Schwab's API has two habits that are awkward when several projects share one account:
+
+- **The refresh token expires every 7 days.** Each project that holds its own token needs its own weekly login. The gateway needs one, and it has a browser page for it (`/reauth/ui`).
+- **The login redirects to a local callback URL.** Most libraries start a local web server to catch it, which fails when the service runs on a different machine from your browser. The gateway asks you to paste the callback URL instead, so it works on a headless box.
+
+It also flattens option chains into rows, filters intraday bars to regular trading hours, builds 60-minute bars (Schwab has none), and serves its own API reference at `/llm-docs` for AI agents.
+
+Built on [schwab-py](https://github.com/alexgolec/schwab-py), FastAPI and Polars. Read-only: it places no orders.
+
+> [!WARNING]
+> **The gateway has no authentication.** Anyone who can reach port 8182 can read your account numbers, orders and transactions, and can start a token renewal. Run it only on a machine and network you trust. Never expose it to the internet. To keep it to one machine, publish the port as `127.0.0.1:8182:8182` in `docker-compose.yml`.
+
+This project is not affiliated with or endorsed by Charles Schwab.
 
 ---
 
@@ -46,13 +64,13 @@ Data endpoints use the envelope `{"symbol": "SPY", "count": N, "data": [...]}`. 
 ### Prerequisites
 
 - Python 3.11+
-- [`uv`](https://docs.astral.sh/uv/) (`brew install uv`)
-- A Schwab developer app — create one at [developer.schwab.com](https://developer.schwab.com)
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+- A Schwab developer app with the *Accounts and Trading Production* and *Market Data Production* APIs. Create one at [developer.schwab.com](https://developer.schwab.com). Schwab can take a few days to approve it.
 
 ### Install
 
 ```bash
-git clone <repo>
+git clone https://github.com/BardsWork/schwab-gateway.git
 cd schwab-gateway
 uv sync
 ```
@@ -70,6 +88,8 @@ SCHWAB_APP_KEY=your_app_key
 SCHWAB_API_SECRET=your_api_secret
 SCHWAB_CALLBACK_URL=https://127.0.0.1
 ```
+
+`SCHWAB_CALLBACK_URL` must match the callback URL registered on your Schwab app exactly.
 
 The token is stored at `~/.schwab/token.json` by default. Override with `TOKEN_PATH=`.
 
@@ -136,7 +156,7 @@ The Swagger UI at `/docs` lists all endpoints and lets you execute requests dire
   "token": {
     "age_hours": 1.5,
     "refresh_expires_in_hours": 166.5,
-    "refresh_expires_at": "2026-04-05T10:30:00"
+    "refresh_expires_at": "2026-04-05T10:30:00+00:00"
   }
 }
 ```
@@ -311,6 +331,8 @@ Real-time market data via the Schwab StreamClient.
 
 `account_activity` requires no `symbols` field. All other types require a non-empty `symbols` list.
 
+Each `/stream` connection opens its own Schwab streamer session. Schwab limits how many sessions one account can hold, so a second client can interrupt the first. The gateway then reconnects the interrupted one (up to 3 attempts) and sends `{"status": "reconnecting"}` / `{"status": "reconnected"}` messages while it does.
+
 ---
 
 ### `GET /llm-docs`
@@ -366,43 +388,41 @@ When the alert fires, open `/reauth/ui` in a browser and follow the two steps, o
 
 ---
 
-## Docker (devbox deployment)
+## Docker
 
 ```bash
 cp .env.example .env  # fill in credentials
+docker network create schwab-net
 docker compose up -d --build
 ```
 
-The named volume `schwab_token` persists `token.json` across restarts and rebuilds. Complete the reauth flow once after first deploy:
+Then open `http://localhost:8182/reauth/ui` and complete the login once.
 
-```bash
-curl http://localhost:8182/reauth
-# open URL, complete login, copy callback URL
-curl -X POST http://localhost:8182/reauth/complete \
-  -H "Content-Type: application/json" \
-  -d '{"callback_url": "https://127.0.0.1?code=...&state=..."}'
-```
+- The named volume `schwab_token` keeps `token.json` across restarts and rebuilds.
+- `schwab-net` is an external Docker network. Other compose stacks join it to reach the gateway at `http://schwab-gateway:8182` without going through the host.
+- The compose file mounts `./gateway` and runs uvicorn with `--reload`, so code edits apply without a rebuild.
 
-See [`deploy/README.md`](deploy/README.md) for full operational notes.
+See [`deploy/README.md`](deploy/README.md) for operational notes.
 
 ---
 
-## Using from `derivatives-analysis`
+## Calling it from your code
 
-Replace direct `schwab-py` calls with the thin gateway client:
+Any HTTP client works. With Polars:
 
 ```python
-# before
-from api.schwab.client import get_client, fetch_bars
-client = get_client()
-df = fetch_bars(client, "SPY", "2026-03-17", "2026-03-21", frequency=5)
+import httpx
+import polars as pl
 
-# after
-from api.schwab.gateway_client import fetch_bars
-df = fetch_bars("SPY", "2026-03-17", "2026-03-21", frequency=5)
+resp = httpx.get(
+    "http://localhost:8182/bars/SPY",
+    params={"from_date": "2026-03-17", "to_date": "2026-03-21", "frequency": 5},
+)
+resp.raise_for_status()
+df = pl.DataFrame(resp.json()["data"])
 ```
 
-`fetch_daily_bars` and `fetch_weekly_bars` are also available. No `schwab-py` dependency, no local `token.json`.
+Errors use FastAPI's `{"detail": "..."}` body. `400` means a bad parameter, `503` means no valid token yet (complete the reauth flow), and `502` means Schwab returned an error.
 
 ---
 
@@ -413,26 +433,28 @@ gateway/
   main.py              # FastAPI app + lifespan
   settings.py          # pydantic-settings (.env)
   client_state.py      # schwab-py client singleton
-  token_utils.py       # pure token age/expiry functions
+  token_utils.py       # token age/expiry functions, token file writer
   routers/
     health.py          # GET /health
     bars.py            # GET /bars, /daily, /weekly
     options.py         # GET /options
-    auth.py            # GET /reauth, POST /reauth/complete
+    accounts.py        # GET /accounts, /accounts/{hash}/orders, /accounts/{hash}/transactions
     instruments.py     # GET /instruments
     quotes.py          # GET /quotes
     stream.py          # WS /stream
+    auth.py            # GET /reauth, /reauth/status, /reauth/ui, POST /reauth/complete
     llm_docs.py        # GET /llm-docs
   llm_docs.md          # machine-readable API reference (served by llm_docs.py)
   monitoring/
     token_monitor.py   # asyncio background task
-tests/
-  conftest.py          # mock helpers (no credentials needed)
-  test_bars.py
-  test_health.py
-  test_options.py
-  test_token_utils.py
+tests/                 # one file per router; conftest.py holds the mocks
 .docker/Dockerfile     # python:3.11-slim + uv
-docker-compose.yml     # port 8182, named volume
+docker-compose.yml     # port 8182, named token volume
 deploy/README.md       # operational notes
 ```
+
+---
+
+## License
+
+[MIT](LICENSE)

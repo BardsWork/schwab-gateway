@@ -189,21 +189,47 @@ class TestStreamReconnect:
     # Forwarder behaviour
     # ------------------------------------------------------------------
 
-    def test_forwarder_logs_warning_and_raises_fe_disconnected(self, caplog):
-        """_make_forwarder should log and raise _FEDisconnected, not silently pass."""
-        import asyncio
+    def test_forwarder_logs_warning_and_flags_disconnect(self, caplog):
+        """A failed send logs once and sets the disconnect event; it does not raise."""
         import logging
 
         mock_ws = MagicMock()
         mock_ws.send_json = AsyncMock(side_effect=RuntimeError("socket closed"))
 
-        forwarder = stream_mod._make_forwarder(mock_ws, "LEVELONE_EQUITIES")
+        async def _run() -> asyncio.Event:
+            gone = asyncio.Event()
+            forwarder = stream_mod._make_forwarder(mock_ws, "LEVELONE_EQUITIES", gone)
+            await forwarder({"key": "SPY"})
+            await forwarder({"key": "SPY"})
+            return gone
 
         with caplog.at_level(logging.WARNING, logger="gateway.routers.stream"):
-            with pytest.raises(stream_mod._FEDisconnected):
-                asyncio.run(forwarder({"key": "SPY"}))
+            gone = asyncio.run(_run())
 
-        assert any("failed to forward" in r.message for r in caplog.records)
+        assert gone.is_set()
+        assert mock_ws.send_json.await_count == 1
+        assert sum("failed to forward" in r.message for r in caplog.records) == 1
+
+    def test_pump_stops_when_frontend_leaves_mid_message(self):
+        """schwab-py never awaits handlers, so the pump must watch the event itself."""
+        async def _run() -> bool:
+            gone = asyncio.Event()
+            sc = MagicMock()
+            waiting = asyncio.Event()
+
+            async def _never_returns() -> None:
+                waiting.set()
+                await asyncio.Event().wait()
+
+            sc.handle_message = _never_returns
+            pump = asyncio.ensure_future(stream_mod._handle_message(sc, gone))
+            await waiting.wait()
+            gone.set()
+            with pytest.raises(stream_mod._FEDisconnected):
+                await asyncio.wait_for(pump, timeout=1)
+            return True
+
+        assert asyncio.run(_run())
 
     # ------------------------------------------------------------------
     # Reconnect — success path

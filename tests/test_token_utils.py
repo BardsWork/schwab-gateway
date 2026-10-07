@@ -58,19 +58,19 @@ class TestRefreshTokenExpiresIn:
 
 class TestTokenAccessExpiresAt:
     def test_returns_datetime_in_future(self):
-        from datetime import datetime
+        from datetime import datetime, timezone
         token = _make_token(expires_at_offset=900)
         expires = token_access_expires_at(token)
         assert isinstance(expires, datetime)
-        assert expires > datetime.now()
+        assert expires > datetime.now(timezone.utc)
 
     def test_correct_timestamp(self):
-        from datetime import datetime
+        from datetime import datetime, timezone
         now = time.time()
         token = {"token": {"expires_at": now + 1800}}
         expires = token_access_expires_at(token)
         assert expires == pytest.approx(
-            datetime.fromtimestamp(now + 1800), abs=1
+            datetime.fromtimestamp(now + 1800, tz=timezone.utc), abs=1
         )
 
 
@@ -112,3 +112,8 @@ class TestWriteToken:
         p = tmp_path / "nested" / "dir" / "token.json"
         write_token(p, {"access_token": "a", "expires_in": 1800})
         assert p.exists()
+
+    def test_file_is_owner_only(self, tmp_path):
+        p = tmp_path / "token.json"
+        write_token(p, {"access_token": "a", "expires_in": 1800})
+        assert p.stat().st_mode & 0o777 == 0o600

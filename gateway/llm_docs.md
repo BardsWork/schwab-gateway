@@ -29,7 +29,7 @@ Returns service and token status. No parameters.
   "token": {
     "age_hours": 1.5,
     "refresh_expires_in_hours": 166.5,
-    "refresh_expires_at": "2026-03-28T10:30:00"
+    "refresh_expires_at": "2026-03-28T10:30:00+00:00"
   }
 }
 ```

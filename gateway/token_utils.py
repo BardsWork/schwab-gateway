@@ -15,7 +15,7 @@ Schwab refresh tokens expire 7 days after that moment.
 """
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 REFRESH_TOKEN_TTL_SECONDS: int = 7 * 86_400
@@ -39,12 +39,14 @@ def refresh_token_expires_in(token: dict) -> float:
 
 def token_access_expires_at(token: dict) -> datetime:
     """Datetime when the current access token expires."""
-    return datetime.fromtimestamp(token["token"]["expires_at"])
+    return datetime.fromtimestamp(token["token"]["expires_at"], tz=timezone.utc)
 
 
 def refresh_token_expires_at(token: dict) -> datetime:
     """Datetime when the 7-day refresh token expires."""
-    return datetime.fromtimestamp(token["creation_timestamp"] + REFRESH_TOKEN_TTL_SECONDS)
+    return datetime.fromtimestamp(
+        token["creation_timestamp"] + REFRESH_TOKEN_TTL_SECONDS, tz=timezone.utc
+    )
 
 
 def write_token(token_path: Path, oauth_response: dict) -> None:
@@ -68,3 +70,5 @@ def write_token(token_path: Path, oauth_response: dict) -> None:
     }
     with open(token_path, "w") as fh:
         json.dump(payload, fh)
+    # The file holds live access and refresh tokens
+    token_path.chmod(0o600)

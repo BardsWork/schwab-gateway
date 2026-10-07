@@ -1,7 +1,9 @@
 [project]
 name = "schwab-gateway"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local HTTP microservice that centralises Schwab OAuth tokens and proxies market-data calls."
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.111.0",
@@ -12,9 +14,6 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     "python-dotenv>=1.0.0",
 ]
-
-[project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "httpx>=0.27.0"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

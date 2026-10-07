@@ -33,22 +33,54 @@ _SUBSCRIPTION_MAP: dict[str, tuple[str, str, str]] = {
 
 
 class _FEDisconnected(Exception):
-    """Raised by _make_forwarder when the frontend WebSocket is no longer writable."""
+    """Raised by the message pump when the frontend WebSocket has gone away."""
 
 
-def _make_forwarder(ws: WebSocket, service: str):
-    """Return an async handler that forwards labeled messages to the WebSocket."""
+def _make_forwarder(ws: WebSocket, service: str, gone: asyncio.Event):
+    """Return an async handler that forwards labeled messages to the WebSocket.
+
+    schwab-py schedules async handlers as tasks and never awaits them, so an
+    exception raised here would not reach the message pump. A failed send
+    sets ``gone`` instead, and the pump watches that.
+    """
     async def _forward(msg: dict) -> None:
+        if gone.is_set():
+            return
         try:
             await ws.send_json({"service": service, "content": msg})
         except Exception as exc:
             logger.warning("Stream WS: failed to forward %s message to client: %s", service, exc)
-            raise _FEDisconnected() from exc
+            gone.set()
     return _forward
 
 
+async def _watch_client(ws: WebSocket, gone: asyncio.Event) -> None:
+    """Set ``gone`` when the frontend closes the WebSocket."""
+    try:
+        while (await ws.receive())["type"] != "websocket.disconnect":
+            pass
+    except Exception:
+        pass
+    gone.set()
+
+
+async def _handle_message(sc: schwab.streaming.StreamClient, gone: asyncio.Event) -> None:
+    """Handle one Schwab message, or raise _FEDisconnected if the frontend leaves first."""
+    message = asyncio.ensure_future(sc.handle_message())
+    left = asyncio.ensure_future(gone.wait())
+    try:
+        await asyncio.wait({message, left}, return_when=asyncio.FIRST_COMPLETED)
+        if message.done():
+            message.result()
+    finally:
+        left.cancel()
+        message.cancel()
+    if gone.is_set():
+        raise _FEDisconnected()
+
+
 async def _build_stream_client(
-    http_client: Any, specs: list[dict], ws: WebSocket
+    http_client: Any, specs: list[dict], ws: WebSocket, gone: asyncio.Event
 ) -> schwab.streaming.StreamClient:
     """Instantiate, log in, and subscribe a StreamClient for the given specs."""
     sc = schwab.streaming.StreamClient(http_client)
@@ -56,7 +88,7 @@ async def _build_stream_client(
     for spec in specs:
         sub_type = spec["type"]
         subs_method_name, handler_method_name, service_key = _SUBSCRIPTION_MAP[sub_type]
-        getattr(sc, handler_method_name)(_make_forwarder(ws, service_key))
+        getattr(sc, handler_method_name)(_make_forwarder(ws, service_key, gone))
         subs_method = getattr(sc, subs_method_name)
         if sub_type == "account_activity":
             await subs_method()
@@ -140,8 +172,10 @@ async def stream(ws: WebSocket) -> None:
 
     # Build StreamClient, log in, subscribe
     stream_client = None
+    gone = asyncio.Event()
+    watcher = asyncio.ensure_future(_watch_client(ws, gone))
     try:
-        stream_client = await _build_stream_client(http_client, specs, ws)
+        stream_client = await _build_stream_client(http_client, specs, ws, gone)
         await ws.send_json({"status": "subscribed", "count": len(specs)})
         logger.info("Stream WS: subscribed to %d feed(s).", len(specs))
 
@@ -150,7 +184,7 @@ async def stream(ws: WebSocket) -> None:
         # Any other exception means the Schwab stream broke → attempt reconnect.
         while True:
             try:
-                await stream_client.handle_message()
+                await _handle_message(stream_client, gone)
             except (_FEDisconnected, WebSocketDisconnect):
                 logger.info("Stream WS: client disconnected.")
                 return
@@ -181,7 +215,7 @@ async def stream(ws: WebSocket) -> None:
                     await asyncio.sleep(delay)
 
                     try:
-                        stream_client = await _build_stream_client(http_client, specs, ws)
+                        stream_client = await _build_stream_client(http_client, specs, ws, gone)
                         await ws.send_json({"status": "reconnected", "attempt": attempt})
                         logger.info("Stream WS: reconnected on attempt %d.", attempt)
                         break  # back to message pump
@@ -216,6 +250,7 @@ async def stream(ws: WebSocket) -> None:
         except Exception:
             pass
     finally:
+        watcher.cancel()
         if stream_client is not None:
             try:
                 await stream_client.logout()
