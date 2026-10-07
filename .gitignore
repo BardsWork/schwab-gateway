@@ -17,4 +17,5 @@ token.json
 
 # Editor and agent local state
 .cursor/
-.claude/settings.local.json
+.claude/
+CLAUDE.md
