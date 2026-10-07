@@ -100,7 +100,7 @@ def reauth_complete(body: ReauthCompleteRequest) -> dict[str, str]:
     if state != _pending_state:
         raise HTTPException(
             status_code=400,
-            detail=f"State mismatch — expected {_pending_state!r}, got {state!r}.",
+            detail="State mismatch — call GET /reauth again and use the new URL.",
         )
 
     # Exchange authorization code for token

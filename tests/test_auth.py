@@ -79,6 +79,7 @@ class TestPostReauthComplete:
         )
         assert resp.status_code == 400
         assert "State mismatch" in resp.json()["detail"]
+        assert "correct_state" not in resp.json()["detail"]
 
     def test_missing_code_returns_400(self, test_app):
         _set_pending_state("some_state")

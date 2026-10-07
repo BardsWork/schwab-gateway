@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 A single-purpose local HTTP microservice that owns the Schwab OAuth token and proxies market-data calls. Every project on the local network hits this service over HTTP — no `schwab-py` dependency, no local `token.json` in consuming projects.
 
-Port **8182**. Deployed via Docker Compose on the devbox, reachable at `http://localhost:8182`.
+Port **8182**. Deployed via Docker Compose, reachable at `http://localhost:8182`.
 
 ---
 
@@ -189,8 +189,6 @@ Intraday bars are filtered to regular trading hours (09:30–15:59 ET) in `_appl
 (hour >= 9) & ((hour > 9) | (minute >= 30)) & (hour < 16)
 ```
 
-This is identical to the logic in `derivatives-analysis/api/schwab/client.py`. Keep them in sync if either changes.
-
 ---
 
 ## Response envelope
@@ -226,17 +224,3 @@ To add a dependency:
 uv add <package>          # runtime
 uv add --dev <package>    # test/dev only
 ```
-
----
-
-## Consuming service (derivatives-analysis)
-
-`api/schwab/gateway_client.py` is the thin wrapper. It targets the gateway at `http://localhost:8182`. The three public functions mirror the old `client.py` signatures minus the `client` argument:
-
-```python
-fetch_bars(symbol, from_date, to_date, frequency=5, clean=True, resample_60=False) -> pl.DataFrame
-fetch_daily_bars(symbol, from_date, to_date) -> pl.DataFrame
-fetch_weekly_bars(symbol, from_date, to_date) -> pl.DataFrame
-```
-
-Notebooks that previously called `get_client()` + `fetch_bars(client, ...)` should be migrated to these. The old `api/schwab/client.py` still exists and still works for direct local use — it just requires a local `token.json`.

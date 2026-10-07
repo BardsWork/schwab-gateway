@@ -10,7 +10,7 @@ Runs every 12 hours.  If the refresh token will expire within
 import asyncio
 import logging
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from gateway.settings import get_settings
@@ -58,7 +58,7 @@ def _send_alert(remaining_days: float, token_path: Path) -> None:
     alert_file = token_path.parent / "token_alert.txt"
     status = "EXPIRED" if remaining_days <= 0 else f"expires in {remaining_days:.1f} days"
     message = (
-        f"[schwab-gateway] Refresh token alert — {datetime.now().isoformat()}\n"
+        f"[schwab-gateway] Refresh token alert — {datetime.now(timezone.utc).isoformat()}\n"
         f"Status  : {status}\n"
         f"Action  : Open http://<gateway-host>:{settings.port}/reauth/ui in a browser to renew.\n"
     )

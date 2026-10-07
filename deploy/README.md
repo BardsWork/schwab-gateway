@@ -2,7 +2,7 @@
 
 ## Target environment
 
-Ubuntu 22.04 devbox — Docker 28, Compose v2. Docker daemon starts on boot,
+Any Linux host with Docker and Compose v2 (developed on Ubuntu 22.04, Docker 28). Docker daemon starts on boot,
 so `restart: always` is sufficient process supervision (no systemd unit needed).
 
 ## First-time setup
@@ -11,6 +11,7 @@ so `restart: always` is sufficient process supervision (no systemd unit needed).
 cd /path/to/schwab-gateway
 cp .env.example .env
 # Fill in SCHWAB_APP_KEY, SCHWAB_API_SECRET, SCHWAB_CALLBACK_URL
+docker network create schwab-net   # once; other stacks join it to reach the gateway
 docker compose up -d --build
 ```
 
@@ -64,27 +65,11 @@ The background monitor checks every 12 hours and writes
 `ALERT_THRESHOLD_DAYS` (default 2) days remain. The `/health` endpoint also
 shows `refresh_expires_in_hours`.
 
-When the alert fires, repeat steps 1–4 above from any machine that can reach
-the devbox.
+When the alert fires, open `/reauth/ui` or repeat steps 1–4 above from any
+machine that can reach the host.
 
-## Port
+## Port and network access
 
-The service listens on **8182** by default: `http://localhost:8182` on the
-devbox. Addresses are not hardcoded here because the devbox's LAN IP changes.
-
-## Updating derivatives-analysis notebooks
-
-Notebooks no longer need `schwab-py` or a local `token.json`. Replace:
-
-```python
-from api.schwab.client import get_client, fetch_bars
-client = get_client()
-df = fetch_bars(client, "SPY", "2026-03-17", "2026-03-21", frequency=5)
-```
-
-with:
-
-```python
-from api.schwab.gateway_client import fetch_bars
-df = fetch_bars("SPY", "2026-03-17", "2026-03-21", frequency=5)
-```
+The service listens on **8182** on all interfaces and has no authentication.
+Keep the host on a trusted network, or publish the port as
+`127.0.0.1:8182:8182` in `docker-compose.yml` to limit it to the host itself.

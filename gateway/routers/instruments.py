@@ -52,8 +52,11 @@ def get_instruments(
             detail=f"projection must be one of {sorted(_VALID_PROJECTIONS)}, got {projection!r}",
         )
 
-    client = _require_client()
     symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    if not symbol_list:
+        raise HTTPException(status_code=400, detail="At least one symbol is required.")
+
+    client = _require_client()
 
     resp = client.get_instruments(symbol_list, _Projection(projection))
     if resp.status_code == 404:

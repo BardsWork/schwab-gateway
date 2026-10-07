@@ -118,6 +118,12 @@ class TestQuotesEndpoint:
         assert resp.status_code == 400
         assert "invalid" in resp.json()["detail"]
 
+    def test_empty_symbols_returns_400(self, test_app):
+        cs._client = MagicMock()
+        resp = test_app.get("/quotes?symbols=,,")
+        assert resp.status_code == 400
+        cs._client.get_quotes.assert_not_called()
+
     def test_503_when_no_client(self, test_app, monkeypatch):
         monkeypatch.setattr(cs, "_client", None)
         resp = test_app.get("/quotes?symbols=SPY")
